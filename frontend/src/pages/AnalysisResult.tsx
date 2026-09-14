@@ -17,6 +17,7 @@ import {
 import { getInspection, downloadPdfReport, downloadDocxReport } from '../api/client';
 import { StatusBadge, ConfidenceBadge, SeverityBadge } from '../components/Badges';
 import type { AnalysisResponse, InspectionDetail } from '../types';
+import { useAuth } from '../context/AuthContext';
 
 type Tab = 'overview' | 'extracted' | 'compliance' | 'violations' | 'reports';
 
@@ -47,6 +48,8 @@ export default function AnalysisResult() {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('overview');
   const [downloading, setDownloading] = useState<'pdf' | 'docx' | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
+  const { user } = useAuth();
 
   useEffect(() => {
     if (!id) return;
@@ -101,6 +104,30 @@ export default function AnalysisResult() {
       alert('Report generation failed. Make sure the backend is running.');
     } finally {
       setDownloading(null);
+    }
+  };
+
+  const handleReviewAction = async (action: string) => {
+    if (!id) return;
+    setActionLoading(true);
+    try {
+      const res = await fetch(`http://localhost:8000/api/reviewer/inspections/${id}/review`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ action, comment: '' })
+      });
+      if (!res.ok) throw new Error('Action failed');
+      // Reload inspection
+      const d = await getInspection(id);
+      setDetail(d);
+      setResult(null); // Clear local result to use DB data
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -197,6 +224,33 @@ export default function AnalysisResult() {
             </p>
           </div>
         </div>
+        
+        {/* Reviewer Actions */}
+        {status === 'NEEDS_HUMAN_REVIEW' && ['REVIEWER', 'ADMIN'].includes(user?.role || '') && (
+          <div className="mt-6 pt-6 border-t border-slate-700/50 flex flex-wrap gap-4">
+            <button 
+              onClick={() => handleReviewAction('CONFIRM')}
+              disabled={actionLoading}
+              className="flex items-center gap-2 px-4 py-2 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-lg hover:bg-emerald-500/20 transition-colors"
+            >
+              <CheckCircle className="w-4 h-4" /> Confirm Compliant
+            </button>
+            <button 
+              onClick={() => handleReviewAction('REJECT')}
+              disabled={actionLoading}
+              className="flex items-center gap-2 px-4 py-2 bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg hover:bg-red-500/20 transition-colors"
+            >
+              <AlertTriangle className="w-4 h-4" /> Mark as Violation
+            </button>
+            <button 
+              onClick={() => handleReviewAction('RETAKE')}
+              disabled={actionLoading}
+              className="flex items-center gap-2 px-4 py-2 bg-slate-700/50 text-slate-300 border border-slate-600/50 rounded-lg hover:bg-slate-700 transition-colors"
+            >
+              Request Retake
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Tabs */}

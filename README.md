@@ -90,14 +90,17 @@ The web dashboard will be available at `http://localhost:5173`
 
 ### Seeding Demo Data
 
-To see the application in action without needing to take perfect photos immediately, you can seed the database with synthetic demo data (generated using Pillow):
+To see the application in action without needing to take perfect photos immediately, you can seed the database with synthetic demo data (generated using Pillow) as well as the initial demo users (inspector, reviewer, admin):
 
 ```bash
 cd backend
 # Ensure virtual environment is activated
 python demo/seed_demo.py
 ```
-This will generate 5 synthetic product label images (good, blurry, missing MRP, dark, angled) in the `uploads/` directory and populate the SQLite database. Open the frontend History tab to see them.
+This will generate 5 synthetic product label images (good, blurry, missing MRP, dark, angled) in the `uploads/` directory and populate the SQLite database. It will also create three demo accounts:
+- **inspector** / `Inspector@123` (Role: INSPECTOR)
+- **reviewer** / `Reviewer@123` (Role: REVIEWER)
+- **admin** / `Admin@123` (Role: ADMIN)
 
 ### Running Tests
 
@@ -159,4 +162,3 @@ The codebase is designed to be extensible for future improvements:
 - Swapping SQLite for PostgreSQL (change one line in `database.py`).
 - Adding YOLO object detection to find the exact region of interest before OCR.
 - Implementing multilingual Indian language OCR.
-- Implementing role-based JWT authentication.

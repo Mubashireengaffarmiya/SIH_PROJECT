@@ -20,7 +20,8 @@ import random
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
-from database.database import init_db, SessionLocal, Inspection, Declaration, Violation
+from database.database import init_db, SessionLocal, Inspection, Declaration, Violation, User
+from routers.auth import get_password_hash
 
 DEMO_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "uploads")
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data", "test_images")
@@ -322,6 +323,30 @@ def seed():
 
     # Init DB
     init_db()
+
+    print("\nSeeding demo users...")
+    db = SessionLocal()
+    demo_users = [
+        {"username": "inspector", "password": "Inspector@123", "role": "INSPECTOR", "full_name": "Demo Inspector"},
+        {"username": "reviewer", "password": "Reviewer@123", "role": "REVIEWER", "full_name": "Demo Reviewer"},
+        {"username": "admin", "password": "Admin@123", "role": "ADMIN", "full_name": "Demo Admin"},
+    ]
+    try:
+        for du in demo_users:
+            if not db.query(User).filter(User.username == du["username"]).first():
+                db.add(User(
+                    username=du["username"],
+                    hashed_password=get_password_hash(du["password"]),
+                    role=du["role"],
+                    full_name=du["full_name"],
+                    email=f"{du['username']}@smartlm.demo"
+                ))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"ERROR seeding users: {exc}")
+    finally:
+        db.close()
 
     # Generate images
     print("Generating synthetic label images...")

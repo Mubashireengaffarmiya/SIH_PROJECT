@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import {
   LayoutDashboard,
   ScanLine,
@@ -8,17 +9,41 @@ import {
   Menu,
   X,
   Scale,
+  LogOut,
+  Users,
+  Settings,
+  ClipboardList,
+  BarChart,
+  User
 } from 'lucide-react';
-
-const navItems = [
-  { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
-  { path: '/inspect', icon: ScanLine, label: 'New Inspection' },
-  { path: '/history', icon: History, label: 'History' },
-];
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
+  const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { user, logout } = useAuth();
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
+
+  const getNavItems = () => {
+    const role = user?.role || '';
+    const items = [
+      { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', roles: ['INSPECTOR', 'REVIEWER', 'ADMIN'] },
+      { path: '/inspect', icon: ScanLine, label: 'New Inspection', roles: ['INSPECTOR', 'ADMIN'] },
+      { path: '/review-queue', icon: ClipboardList, label: 'Review Queue', roles: ['REVIEWER', 'ADMIN'] },
+      { path: '/history', icon: History, label: 'History', roles: ['INSPECTOR', 'REVIEWER', 'ADMIN'] },
+      { path: '/admin/users', icon: Users, label: 'User Management', roles: ['ADMIN'] },
+      { path: '/admin/rules', icon: Settings, label: 'Rules Engine', roles: ['ADMIN'] },
+      { path: '/admin/audit', icon: Shield, label: 'Audit Logs', roles: ['ADMIN'] },
+      { path: '/admin/analytics', icon: BarChart, label: 'Analytics', roles: ['ADMIN'] },
+    ];
+    return items.filter(item => item.roles.includes(role));
+  };
+
+  const navItems = getNavItems();
 
   return (
     <div className="flex min-h-screen" style={{ backgroundColor: 'var(--color-navy-950)' }}>
@@ -63,7 +88,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         {/* Nav */}
         <nav className="mt-6 px-3">
           {navItems.map((item) => {
-            const active = location.pathname === item.path;
+            const active = location.pathname.startsWith(item.path);
             const Icon = item.icon;
             return (
               <Link
@@ -83,24 +108,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             );
           })}
         </nav>
-
-        {/* Bottom badge */}
-        <div className="absolute bottom-0 left-0 right-0 px-4 py-4">
-          <div
-            className="rounded-lg px-3 py-2 text-center"
-            style={{ background: 'rgba(212,175,55,0.07)', border: '1px solid rgba(212,175,55,0.12)' }}
-          >
-            <div className="flex items-center justify-center gap-1.5 mb-1">
-              <Shield className="w-3.5 h-3.5" style={{ color: 'var(--color-gold-500)' }} />
-              <span className="text-xs font-semibold" style={{ color: 'var(--color-gold-500)' }}>
-                SIH 2026 Prototype
-              </span>
-            </div>
-            <p className="text-xs" style={{ color: 'rgba(226,232,240,0.4)' }}>
-              Not for enforcement use
-            </p>
-          </div>
-        </div>
       </aside>
 
       {/* Main */}
@@ -124,23 +131,34 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             </button>
             <div>
               <h1 className="text-base font-bold" style={{ color: '#e2e8f0' }}>
-                {navItems.find((n) => n.path === location.pathname)?.label ?? 'SMART-LM'}
+                {navItems.find((n) => location.pathname.startsWith(n.path))?.label ?? 'SMART-LM'}
               </h1>
-              <p className="text-xs" style={{ color: 'rgba(226,232,240,0.45)' }}>
-                Smart Legal Metrology Compliance & Inspection System
+              <p className="text-xs hidden sm:block" style={{ color: 'rgba(226,232,240,0.45)' }}>
+                Smart Legal Metrology Compliance System
               </p>
             </div>
           </div>
-          <div
-            className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium"
-            style={{
-              background: 'rgba(212,175,55,0.1)',
-              border: '1px solid rgba(212,175,55,0.2)',
-              color: 'var(--color-gold-500)',
-            }}
-          >
-            <Shield className="w-3.5 h-3.5" />
-            Inspection Mode
+          
+          <div className="flex items-center gap-4">
+            {user && (
+              <div className="flex items-center gap-3 bg-slate-800/50 px-3 py-1.5 rounded-full border border-slate-700/50">
+                <div className="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center">
+                  <User className="w-4 h-4 text-blue-400" />
+                </div>
+                <div className="hidden sm:block">
+                  <div className="text-sm font-medium text-slate-200">{user.username}</div>
+                  <div className="text-[10px] uppercase tracking-wider text-blue-400 font-semibold">{user.role}</div>
+                </div>
+              </div>
+            )}
+            
+            <button 
+              onClick={handleLogout}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+              <span className="text-sm font-medium hidden sm:block">Logout</span>
+            </button>
           </div>
         </header>
 

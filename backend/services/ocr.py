@@ -35,6 +35,20 @@ if not _PADDLE_AVAILABLE:
     try:
         import pytesseract as _pytesseract
         from PIL import Image as _PILImage
+        import os as _os
+        
+        # Windows-specific check for Tesseract installation if not in PATH
+        if _os.name == 'nt':
+            _possible_paths = [
+                r'C:\Program Files\Tesseract-OCR\tesseract.exe',
+                r'C:\Program Files (x86)\Tesseract-OCR\tesseract.exe',
+                _os.path.expandvars(r'%LOCALAPPDATA%\Programs\Tesseract-OCR\tesseract.exe')
+            ]
+            for _p in _possible_paths:
+                if _os.path.exists(_p):
+                    _pytesseract.pytesseract.tesseract_cmd = _p
+                    break
+
         _TESSERACT_AVAILABLE = True
         logger.info("Tesseract (pytesseract) detected — will use as OCR engine.")
     except ImportError:

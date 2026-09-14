@@ -30,3 +30,8 @@ httpx
 
 # Utilities
 python-dateutil
+
+# Auth & Security
+python-jose[cryptography]
+passlib[bcrypt]
+bcrypt

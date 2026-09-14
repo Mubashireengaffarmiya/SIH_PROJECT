@@ -29,7 +29,7 @@ Base = declarative_base()
 
 
 # ---------------------------------------------------------------------------
-# ORM Models
+# ORM Models — EXISTING (do not remove)
 # ---------------------------------------------------------------------------
 
 class Inspection(Base):
@@ -46,9 +46,18 @@ class Inspection(Base):
     ocr_text_length = Column(Integer, default=0)
     is_demo = Column(Boolean, default=False)
 
+    # New fields added non-destructively
+    inspector_username = Column(String(100), nullable=True)
+    manufacturer = Column(String(255), nullable=True)
+    product_category = Column(String(100), nullable=True)
+    location = Column(String(255), nullable=True)
+    notes = Column(Text, nullable=True)
+    review_status = Column(String(50), nullable=True)   # PENDING | APPROVED | REJECTED | RETAKE
+
     declarations = relationship("Declaration", back_populates="inspection", cascade="all, delete-orphan")
     violations = relationship("Violation", back_populates="inspection", cascade="all, delete-orphan")
     reports = relationship("Report", back_populates="inspection", cascade="all, delete-orphan")
+    review_actions = relationship("ReviewAction", back_populates="inspection", cascade="all, delete-orphan")
 
 
 class Declaration(Base):
@@ -90,6 +99,74 @@ class Report(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     inspection = relationship("Inspection", back_populates="reports")
+
+
+# ---------------------------------------------------------------------------
+# ORM Models — NEW
+# ---------------------------------------------------------------------------
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(100), unique=True, index=True, nullable=False)
+    hashed_password = Column(String(256), nullable=False)
+    full_name = Column(String(255), nullable=True)
+    email = Column(String(255), nullable=True)
+    role = Column(String(20), nullable=False)           # INSPECTOR | REVIEWER | ADMIN
+    is_active = Column(Boolean, default=True)
+    last_login = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class ReviewAction(Base):
+    __tablename__ = "review_actions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    inspection_id = Column(String(50), ForeignKey("inspections.inspection_id"), nullable=False)
+    reviewer_username = Column(String(100), nullable=False)
+    action = Column(String(30), nullable=False)         # CONFIRM | REJECT | RETAKE | NOT_VERIFIABLE | COMMENT
+    comment = Column(Text, nullable=True)
+    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    inspection = relationship("Inspection", back_populates="review_actions")
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(100), nullable=False)
+    action = Column(String(100), nullable=False)
+    resource_type = Column(String(50), nullable=True)   # inspection | user | rule | report
+    resource_id = Column(String(100), nullable=True)
+    detail = Column(Text, nullable=True)
+    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(100), nullable=False)      # target user
+    message = Column(Text, nullable=False)
+    notif_type = Column(String(50), nullable=True)      # inspection | review | report | violation
+    related_id = Column(String(100), nullable=True)     # inspection_id etc.
+    is_read = Column(Boolean, default=False)
+    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class ComplianceRule(Base):
+    __tablename__ = "compliance_rules"
+
+    id = Column(Integer, primary_key=True, index=True)
+    rule_id = Column(String(50), unique=True, index=True, nullable=False)
+    requirement = Column(Text, nullable=False)
+    category = Column(String(100), nullable=True)
+    version = Column(String(20), nullable=True)
+    effective_date = Column(String(20), nullable=True)
+    is_active = Column(Boolean, default=True)
+    source = Column(String(255), nullable=True)
 
 
 # ---------------------------------------------------------------------------
