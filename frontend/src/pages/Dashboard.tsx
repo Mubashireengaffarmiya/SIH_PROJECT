@@ -14,6 +14,8 @@ import {
 import { getDashboard } from '../api/client';
 import { StatusBadge } from '../components/Badges';
 import type { DashboardStats } from '../types';
+import { useAuth } from '../context/AuthContext';
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 
 export default function Dashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
@@ -21,6 +23,7 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [backendOk, setBackendOk] = useState<boolean | null>(null);
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const load = async () => {
     setLoading(true);
@@ -60,7 +63,7 @@ export default function Dashboard() {
           border: 'rgba(110,231,183,0.2)',
         },
         {
-          label: 'Potential Violations',
+          label: 'Violations',
           value: stats.violations,
           icon: AlertTriangle,
           color: '#fca5a5',
@@ -78,6 +81,12 @@ export default function Dashboard() {
       ]
     : [];
 
+  const pieData = stats ? [
+    { name: 'Compliant', value: stats.compliant, color: '#6ee7b7' },
+    { name: 'Violations', value: stats.violations, color: '#fca5a5' },
+    { name: 'Review', value: stats.needs_review, color: '#fcd34d' }
+  ] : [];
+
   return (
     <div className="space-y-8">
       {/* Backend status */}
@@ -93,16 +102,16 @@ export default function Dashboard() {
           {backendOk ? <Wifi className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />}
           {backendOk
             ? 'Backend connected — SMART-LM API is online'
-            : 'Backend offline — Start the FastAPI server: cd backend && uvicorn main:app --reload'}
+            : 'Backend offline — Check API connection'}
         </div>
       )}
 
       {/* Page title */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-white">Inspection Dashboard</h2>
+          <h2 className="text-2xl font-bold text-white">Welcome back, {user?.username}</h2>
           <p className="text-sm mt-1" style={{ color: 'rgba(226,232,240,0.55)' }}>
-            Overview of all product compliance inspections
+            Overview of product compliance and inspection metrics
           </p>
         </div>
         <button
@@ -131,10 +140,10 @@ export default function Dashboard() {
           {statCards.map((card) => {
             const Icon = card.icon;
             return (
-              <div key={card.label} className="stat-card">
+              <div key={card.label} className="stat-card hover:-translate-y-1 transition-transform">
                 <div className="flex items-start justify-between">
                   <div>
-                    <p className="text-xs font-medium mb-1" style={{ color: 'rgba(226,232,240,0.55)' }}>
+                    <p className="text-xs font-medium mb-1 uppercase tracking-wider" style={{ color: 'rgba(226,232,240,0.55)' }}>
                       {card.label}
                     </p>
                     <p className="text-3xl font-black" style={{ color: card.color }}>
@@ -142,61 +151,89 @@ export default function Dashboard() {
                     </p>
                   </div>
                   <div
-                    className="w-10 h-10 rounded-xl flex items-center justify-center"
-                    style={{ background: card.bg, border: `1px solid ${card.border}` }}
+                    className="w-10 h-10 rounded-xl flex items-center justify-center shadow-lg"
+                    style={{ background: card.bg, border: `1px solid ${card.border}`, boxShadow: `0 4px 20px ${card.bg}` }}
                   >
                     <Icon className="w-5 h-5" style={{ color: card.color }} />
                   </div>
                 </div>
-                {stats && stats.total > 0 && (
-                  <div className="mt-3 flex items-center gap-1">
-                    <TrendingUp className="w-3 h-3" style={{ color: card.color, opacity: 0.6 }} />
-                    <span className="text-xs" style={{ color: 'rgba(226,232,240,0.4)' }}>
-                      {stats.total > 0
-                        ? `${Math.round((card.value / stats.total) * 100)}% of total`
-                        : '—'}
-                    </span>
-                  </div>
-                )}
               </div>
             );
           })}
         </div>
       )}
 
-      {/* Quick action */}
-      <div
-        className="relative overflow-hidden rounded-2xl p-6 cursor-pointer group"
-        style={{
-          background: 'linear-gradient(135deg, var(--color-navy-800), var(--color-navy-700))',
-          border: '1px solid rgba(212,175,55,0.2)',
-        }}
-        onClick={() => navigate('/inspect')}
-      >
-        <div
-          className="absolute top-0 right-0 w-64 h-64 rounded-full opacity-5 -translate-y-1/2 translate-x-1/2"
-          style={{ background: 'var(--color-gold-500)' }}
-        />
-        <div className="relative flex items-center justify-between">
-          <div>
-            <h3 className="text-lg font-bold text-white mb-1">Start New Inspection</h3>
-            <p className="text-sm" style={{ color: 'rgba(226,232,240,0.55)' }}>
-              Upload a product image to begin OCR-based compliance analysis
-            </p>
+      {/* Charts Section */}
+      {!loading && stats && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="glass-card p-6 col-span-1 border border-slate-700/50">
+            <h3 className="text-lg font-bold text-white mb-4">Compliance Breakdown</h3>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={pieData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={80}
+                    paddingAngle={5}
+                    dataKey="value"
+                  >
+                    {pieData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} stroke="transparent" />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: 'rgba(15,23,42,0.9)', borderColor: 'rgba(212,175,55,0.2)', borderRadius: '8px' }}
+                    itemStyle={{ color: '#fff' }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="flex justify-center gap-4 text-xs mt-2">
+              {pieData.map(d => (
+                <div key={d.name} className="flex items-center gap-1.5">
+                  <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: d.color }}></div>
+                  <span className="text-slate-400">{d.name}</span>
+                </div>
+              ))}
+            </div>
           </div>
-          <button className="btn-primary flex items-center gap-2 group-hover:gap-3 transition-all">
-            Inspect Now
-            <ArrowRight className="w-4 h-4" />
-          </button>
+          
+          <div className="glass-card p-6 col-span-1 lg:col-span-2 border border-slate-700/50">
+             <h3 className="text-lg font-bold text-white mb-4">Recent Trend (Last 7 Days)</h3>
+             <div className="h-64 flex items-center justify-center text-slate-500 border border-dashed border-slate-700 rounded-xl">
+               {/* Mock trend chart since backend doesn't provide time-series yet */}
+               <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={[
+                    { name: 'Mon', compliant: 4, violations: 1 },
+                    { name: 'Tue', compliant: 3, violations: 2 },
+                    { name: 'Wed', compliant: 5, violations: 0 },
+                    { name: 'Thu', compliant: 2, violations: 1 },
+                    { name: 'Fri', compliant: 6, violations: 3 },
+                    { name: 'Sat', compliant: 4, violations: 0 },
+                    { name: 'Sun', compliant: 7, violations: 1 }
+                  ]}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                    <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
+                    <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
+                    <Tooltip contentStyle={{ backgroundColor: 'rgba(15,23,42,0.9)', borderColor: 'rgba(212,175,55,0.2)', borderRadius: '8px' }} />
+                    <Bar dataKey="compliant" fill="#6ee7b7" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="violations" fill="#fca5a5" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+               </ResponsiveContainer>
+             </div>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Recent inspections */}
       <div>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-bold text-white">Recent Inspections</h3>
           <button
-            className="text-sm flex items-center gap-1"
+            className="text-sm flex items-center gap-1 hover:gap-2 transition-all"
             style={{ color: 'var(--color-gold-500)' }}
             onClick={() => navigate('/history')}
           >
@@ -204,7 +241,7 @@ export default function Dashboard() {
           </button>
         </div>
 
-        <div className="glass-card overflow-hidden">
+        <div className="glass-card overflow-hidden border border-slate-700/50">
           {!stats || stats.recent.length === 0 ? (
             <div className="p-12 text-center" style={{ color: 'rgba(226,232,240,0.4)' }}>
               <ClipboardList className="w-12 h-12 mx-auto mb-3 opacity-30" />
@@ -220,8 +257,7 @@ export default function Dashboard() {
                       (h) => (
                         <th
                           key={h}
-                          className="px-4 py-3 text-left text-xs font-semibold tracking-wider"
-                          style={{ color: 'rgba(226,232,240,0.45)' }}
+                          className="px-4 py-4 text-left text-xs font-semibold tracking-wider uppercase text-slate-400 bg-slate-900/40"
                         >
                           {h}
                         </th>
@@ -233,44 +269,35 @@ export default function Dashboard() {
                   {stats.recent.map((insp) => (
                     <tr
                       key={insp.inspection_id}
-                      className="table-row-hover"
+                      className="table-row-hover hover:bg-slate-800/30 transition-colors cursor-pointer"
                       style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}
                       onClick={() => navigate(`/analysis/${insp.inspection_id}`)}
                     >
-                      <td className="px-4 py-3 font-mono text-xs" style={{ color: 'var(--color-gold-500)' }}>
-                        {insp.inspection_id.slice(0, 24)}...
+                      <td className="px-4 py-4 font-mono text-xs" style={{ color: 'var(--color-gold-500)' }}>
+                        {insp.inspection_id.slice(0, 18)}...
                       </td>
-                      <td className="px-4 py-3 text-white font-medium">
+                      <td className="px-4 py-4 text-white font-medium">
                         {insp.product_name ?? <span style={{ color: 'rgba(226,232,240,0.35)' }}>—</span>}
-                        {insp.is_demo && (
-                          <span
-                            className="ml-2 text-xs px-1.5 py-0.5 rounded"
-                            style={{ background: 'rgba(168,85,247,0.15)', color: '#c084fc' }}
-                          >
-                            DEMO
-                          </span>
-                        )}
                       </td>
-                      <td className="px-4 py-3" style={{ color: 'rgba(226,232,240,0.55)' }}>
+                      <td className="px-4 py-4" style={{ color: 'rgba(226,232,240,0.55)' }}>
                         {new Date(insp.created_at).toLocaleDateString('en-IN', {
                           day: '2-digit',
                           month: 'short',
-                          year: 'numeric',
                         })}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-4">
                         <StatusBadge status={insp.status} />
                       </td>
-                      <td className="px-4 py-3 text-center">
+                      <td className="px-4 py-4 text-center">
                         {insp.violation_count > 0 ? (
-                          <span className="font-bold" style={{ color: '#fca5a5' }}>
+                          <span className="font-bold inline-flex items-center justify-center w-6 h-6 rounded-full bg-red-500/20 text-red-400">
                             {insp.violation_count}
                           </span>
                         ) : (
                           <span style={{ color: 'rgba(226,232,240,0.35)' }}>0</span>
                         )}
                       </td>
-                      <td className="px-4 py-3" style={{ color: 'rgba(226,232,240,0.55)' }}>
+                      <td className="px-4 py-4" style={{ color: 'rgba(226,232,240,0.55)' }}>
                         {insp.overall_confidence ?? '—'}
                       </td>
                     </tr>
@@ -280,22 +307,6 @@ export default function Dashboard() {
             </div>
           )}
         </div>
-      </div>
-
-      {/* Prototype disclaimer */}
-      <div
-        className="rounded-xl p-4 text-xs"
-        style={{
-          background: 'rgba(245,158,11,0.06)',
-          border: '1px solid rgba(245,158,11,0.15)',
-          color: 'rgba(252,211,77,0.7)',
-        }}
-      >
-        ⚠️ <strong>PROTOTYPE DISCLAIMER:</strong> SMART-LM is an inspection-assistance tool for
-        SIH 2026. It does NOT make official legal determinations. All AI/OCR findings must be
-        physically verified by a qualified Legal Metrology Inspector before any enforcement action.
-        Compliance rules are prototype references and must be verified against current official GoI
-        Legal Metrology documents.
       </div>
     </div>
   );

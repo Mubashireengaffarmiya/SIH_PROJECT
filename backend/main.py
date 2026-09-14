@@ -29,6 +29,7 @@ from services.ocr import run_ocr
 from services.extraction import extract_all
 from services.compliance import run_compliance
 from services.reports import generate_pdf, generate_docx
+from routers import auth, admin, reviewer
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -77,6 +78,10 @@ app.add_middleware(
 # Serve uploaded images as static files
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
+app.include_router(auth.router)
+app.include_router(admin.router)
+app.include_router(reviewer.router)
+
 # ---------------------------------------------------------------------------
 # Startup
 # ---------------------------------------------------------------------------
@@ -106,7 +111,7 @@ def health():
 # Analysis endpoint (main pipeline)
 # ---------------------------------------------------------------------------
 
-@app.post("/api/analyze", response_model=AnalysisResponse)
+@app.post("/api/analyze", response_model=AnalysisResponse, dependencies=[Depends(auth.get_current_user)])
 async def analyze_image(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -283,7 +288,7 @@ async def analyze_image(
 # Inspections
 # ---------------------------------------------------------------------------
 
-@app.get("/api/inspections", response_model=List[InspectionSummary])
+@app.get("/api/inspections", response_model=List[InspectionSummary], dependencies=[Depends(auth.get_current_user)])
 def list_inspections(skip: int = 0, limit: int = 50, db: Session = Depends(get_db)):
     """Return all inspections, newest first."""
     inspections = (
@@ -308,7 +313,7 @@ def list_inspections(skip: int = 0, limit: int = 50, db: Session = Depends(get_d
     return result
 
 
-@app.get("/api/inspections/{inspection_id}", response_model=InspectionDetail)
+@app.get("/api/inspections/{inspection_id}", response_model=InspectionDetail, dependencies=[Depends(auth.get_current_user)])
 def get_inspection(inspection_id: str, db: Session = Depends(get_db)):
     """Return full details for one inspection."""
     insp = db.query(Inspection).filter(Inspection.inspection_id == inspection_id).first()
@@ -339,7 +344,7 @@ def get_inspection(inspection_id: str, db: Session = Depends(get_db)):
 # Dashboard stats
 # ---------------------------------------------------------------------------
 
-@app.get("/api/dashboard", response_model=DashboardStats)
+@app.get("/api/dashboard", response_model=DashboardStats, dependencies=[Depends(auth.get_current_user)])
 def dashboard_stats(db: Session = Depends(get_db)):
     inspections = db.query(Inspection).all()
     total = len(inspections)
@@ -413,7 +418,7 @@ def _build_report_data(insp: Inspection) -> dict:
     }
 
 
-@app.post("/api/reports/{inspection_id}/pdf")
+@app.post("/api/reports/{inspection_id}/pdf", dependencies=[Depends(auth.get_current_user)])
 def create_pdf_report(inspection_id: str, db: Session = Depends(get_db)):
     insp = db.query(Inspection).filter(Inspection.inspection_id == inspection_id).first()
     if not insp:
@@ -439,7 +444,7 @@ def create_pdf_report(inspection_id: str, db: Session = Depends(get_db)):
     )
 
 
-@app.post("/api/reports/{inspection_id}/docx")
+@app.post("/api/reports/{inspection_id}/docx", dependencies=[Depends(auth.get_current_user)])
 def create_docx_report(inspection_id: str, db: Session = Depends(get_db)):
     insp = db.query(Inspection).filter(Inspection.inspection_id == inspection_id).first()
     if not insp:
