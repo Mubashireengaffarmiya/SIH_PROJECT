@@ -1,0 +1,121 @@
+{
+  "_meta": {
+    "version": "1.0.0-prototype",
+    "description": "SMART-LM prototype rule set. These rules are based on commonly understood requirements under the Legal Metrology (Packaged Commodities) Rules 2011 and subsequent amendments. ALL RULES MARKED prototype=true MUST be verified against current official Government of India Legal Metrology documents before any real enforcement use.",
+    "source_note": "For official rules, refer to: Legal Metrology Act 2009, Legal Metrology (Packaged Commodities) Rules 2011, and all amendments issued by the Department for Promotion of Industry and Internal Trade (DPIIT), Ministry of Commerce & Industry, Government of India.",
+    "last_updated": "2026-09-14",
+    "prototype": true
+  },
+  "rules": [
+    {
+      "rule_id": "PC-MRP-001",
+      "requirement": "Maximum Retail Price (MRP) must be declared on every package",
+      "applicable_category": "general_packaged_commodity",
+      "effective_from": "2011-01-01",
+      "validation_method": "mrp_present",
+      "severity": "HIGH",
+      "source": "Legal Metrology (Packaged Commodities) Rules 2011, Rule 6(1)(d) — prototype reference",
+      "prototype": true,
+      "description": "Every package of a commodity shall bear a declaration of the Maximum Retail Price inclusive of all taxes."
+    },
+    {
+      "rule_id": "PC-MRP-002",
+      "requirement": "MRP must include all taxes",
+      "applicable_category": "general_packaged_commodity",
+      "effective_from": "2011-01-01",
+      "validation_method": "mrp_format_check",
+      "severity": "MEDIUM",
+      "source": "Legal Metrology (Packaged Commodities) Rules 2011 — prototype reference",
+      "prototype": true,
+      "description": "MRP declaration must be in the format 'MRP Rs./₹ X.XX (inclusive of all taxes)' or equivalent."
+    },
+    {
+      "rule_id": "PC-QTY-001",
+      "requirement": "Net quantity must be declared",
+      "applicable_category": "general_packaged_commodity",
+      "effective_from": "2011-01-01",
+      "validation_method": "net_quantity_present",
+      "severity": "HIGH",
+      "source": "Legal Metrology (Packaged Commodities) Rules 2011, Rule 6(1)(b) — prototype reference",
+      "prototype": true,
+      "description": "Every package shall bear a declaration of the net quantity in standard units (g, kg, ml, L, pieces)."
+    },
+    {
+      "rule_id": "PC-MFR-001",
+      "requirement": "Name and address of manufacturer, packer or importer must be declared",
+      "applicable_category": "general_packaged_commodity",
+      "effective_from": "2011-01-01",
+      "validation_method": "manufacturer_present",
+      "severity": "HIGH",
+      "source": "Legal Metrology (Packaged Commodities) Rules 2011, Rule 6(1)(c) — prototype reference",
+      "prototype": true,
+      "description": "The name and complete address of the manufacturer, packer, or importer must appear on the package."
+    },
+    {
+      "rule_id": "PC-MFD-001",
+      "requirement": "Month and year of manufacture or packing must be declared",
+      "applicable_category": "general_packaged_commodity",
+      "effective_from": "2011-01-01",
+      "validation_method": "manufacturing_date_present",
+      "severity": "HIGH",
+      "source": "Legal Metrology (Packaged Commodities) Rules 2011, Rule 6(1)(e) — prototype reference",
+      "prototype": true,
+      "description": "Every package shall bear the month and year in which the commodity is manufactured or packed."
+    },
+    {
+      "rule_id": "PC-CC-001",
+      "requirement": "Consumer care details (address/phone/email) must be declared",
+      "applicable_category": "general_packaged_commodity",
+      "effective_from": "2017-01-01",
+      "validation_method": "consumer_care_present",
+      "severity": "MEDIUM",
+      "source": "Legal Metrology (Packaged Commodities) Amendment Rules 2017 — prototype reference",
+      "prototype": true,
+      "description": "Consumer care contact details (address, telephone number, or email) must be mentioned on the package."
+    },
+    {
+      "rule_id": "PC-COO-001",
+      "requirement": "Country of origin must be declared for imported commodities",
+      "applicable_category": "imported_packaged_commodity",
+      "effective_from": "2011-01-01",
+      "validation_method": "country_of_origin_present",
+      "severity": "HIGH",
+      "source": "Legal Metrology (Packaged Commodities) Rules 2011, Rule 6(1)(k) — prototype reference",
+      "prototype": true,
+      "description": "Country of origin is mandatory for imported goods. For Indian goods, it is good practice."
+    },
+    {
+      "rule_id": "PC-BB-001",
+      "requirement": "Best before / expiry date must be declared for perishable commodities",
+      "applicable_category": "perishable_packaged_commodity",
+      "effective_from": "2011-01-01",
+      "validation_method": "best_before_present",
+      "severity": "HIGH",
+      "source": "Legal Metrology (Packaged Commodities) Rules 2011, Rule 6(1)(f) — prototype reference",
+      "prototype": true,
+      "description": "Best before or expiry date in DD/MM/YYYY or Month-Year format is mandatory for perishables."
+    },
+    {
+      "rule_id": "PC-USP-001",
+      "requirement": "Unit sale price must be declared where applicable",
+      "applicable_category": "general_packaged_commodity",
+      "effective_from": "2011-01-01",
+      "validation_method": "unit_sale_price_check",
+      "severity": "LOW",
+      "source": "Legal Metrology (Packaged Commodities) Rules 2011 — prototype reference",
+      "prototype": true,
+      "description": "For commodities sold by weight or volume, the unit sale price per kg/litre may be required."
+    },
+    {
+      "rule_id": "PC-GENERIC-001",
+      "requirement": "Name or generic name of the commodity must be declared",
+      "applicable_category": "general_packaged_commodity",
+      "effective_from": "2011-01-01",
+      "validation_method": "product_name_present",
+      "severity": "MEDIUM",
+      "source": "Legal Metrology (Packaged Commodities) Rules 2011, Rule 6(1)(a) — prototype reference",
+      "prototype": true,
+      "description": "Every package shall bear the name or generic name of the commodity contained therein."
+    }
+  ]
+}

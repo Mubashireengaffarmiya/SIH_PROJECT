@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.env
+.venv
+env/
+venv/
+ENV/
+*.log
+
+# SQLite database
+*.db
+*.sqlite
+*.sqlite3
+
+# Uploads and generated reports (local only)
+backend/uploads/*
+backend/generated_reports/*
+!backend/uploads/.gitkeep
+!backend/generated_reports/.gitkeep
+
+# Node / Frontend
+node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# PaddleOCR cache
+.paddleocr/
+inference/
+
+# Test coverage
+.coverage
+htmlcov/
+.pytest_cache/

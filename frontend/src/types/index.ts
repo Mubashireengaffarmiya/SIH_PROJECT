@@ -1,0 +1,121 @@
+// API type definitions for SMART-LM
+
+export interface OCRWord {
+  text: string;
+  confidence: number;
+  bbox: [number, number, number, number];
+}
+
+export interface OCRResult {
+  words: OCRWord[];
+  full_text: string;
+  engine: string;
+  success: boolean;
+  error: string | null;
+}
+
+export interface ImageQualityResult {
+  quality: 'GOOD' | 'ACCEPTABLE' | 'POOR';
+  blur_score: number;
+  brightness: number;
+  contrast: number;
+  message: string;
+  width: number;
+  height: number;
+}
+
+export interface ExtractedField {
+  value: string | null;
+  confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+  evidence_text: string | null;
+}
+
+export interface ExtractionResult {
+  product_name: ExtractedField;
+  mrp: ExtractedField;
+  net_quantity: ExtractedField;
+  manufacturer: ExtractedField;
+  manufacturing_date: ExtractedField;
+  consumer_care: ExtractedField;
+  country_of_origin: ExtractedField;
+  best_before: ExtractedField;
+  unit_sale_price: ExtractedField;
+}
+
+export type ComplianceStatus = 'VERIFIED_COMPLIANT' | 'POTENTIAL_VIOLATION' | 'NEEDS_HUMAN_REVIEW';
+
+export interface ViolationDetail {
+  field_name: string;
+  reason: string;
+  severity: 'HIGH' | 'MEDIUM' | 'LOW';
+  confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+  rule_id: string | null;
+  evidence: string | null;
+}
+
+export interface ComplianceResult {
+  overall_status: ComplianceStatus;
+  overall_confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+  field_statuses: Record<string, ComplianceStatus>;
+  violations: ViolationDetail[];
+  summary: string;
+}
+
+export interface AnalysisResponse {
+  inspection_id: string;
+  image_quality: ImageQualityResult;
+  ocr: OCRResult;
+  extraction: ExtractionResult;
+  compliance: ComplianceResult;
+  created_at: string;
+  is_demo: boolean;
+}
+
+export interface InspectionSummary {
+  inspection_id: string;
+  created_at: string;
+  product_name: string | null;
+  status: ComplianceStatus;
+  overall_confidence: string | null;
+  image_quality: string | null;
+  violation_count: number;
+  is_demo: boolean;
+}
+
+export interface DeclarationOut {
+  field_name: string;
+  extracted_value: string | null;
+  confidence: string | null;
+  status: string | null;
+  evidence_text: string | null;
+}
+
+export interface ViolationOut {
+  field_name: string;
+  reason: string;
+  severity: string;
+  confidence: string | null;
+  rule_id: string | null;
+  evidence: string | null;
+}
+
+export interface InspectionDetail {
+  inspection_id: string;
+  created_at: string;
+  product_name: string | null;
+  status: ComplianceStatus;
+  overall_confidence: string | null;
+  image_quality: string | null;
+  image_path: string | null;
+  is_demo: boolean;
+  declarations: DeclarationOut[];
+  violations: ViolationOut[];
+}
+
+export interface DashboardStats {
+  total: number;
+  compliant: number;
+  violations: number;
+  needs_review: number;
+  recent: InspectionSummary[];
+}
