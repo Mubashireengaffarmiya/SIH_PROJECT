@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ClipboardList, ArrowRight, Clock, AlertCircle } from 'lucide-react';
+import { ArrowRight, Clock, AlertCircle } from 'lucide-react';
 import { StatusBadge } from '../components/Badges';
 import type { InspectionSummary } from '../types';
+import { getReviewQueue } from '../api/client';
 
 export default function ReviewQueue() {
   const [queue, setQueue] = useState<InspectionSummary[]>([]);
@@ -13,16 +14,9 @@ export default function ReviewQueue() {
   const loadQueue = async () => {
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:8000/api/reviewer/queue', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
-      if (!res.ok) throw new Error('Failed to fetch review queue');
-      const data = await res.json();
-      setQueue(data);
-    } catch (err: any) {
-      setError(err.message);
+      setQueue(await getReviewQueue());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch review queue');
     } finally {
       setLoading(false);
     }

@@ -66,36 +66,29 @@ def _empty_field() -> Dict[str, Any]:
 def extract_mrp(full_text: str, words: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     Detect MRP patterns:
-      MRP ₹50 / MRP Rs.50 / MRP: 50 / Maximum Retail Price ₹50 / MRP INR 50.00
+      MRP ₹50 / MRP Rs.50 / MRP: 50 / Maximum Retail Price ₹50 / MRP & 250.00
     """
-    # Strong patterns — keyword + currency symbol/amount
-    strong = re.compile(
-        r'(?:MRP|M\.R\.P\.?|Maximum\s+Retail\s+Price)\s*[:\-]?\s*'
-        r'(?:Rs\.?|₹|INR|Rs)\s*([0-9]+(?:\.[0-9]{1,2})?)',
-        re.IGNORECASE
-    )
-    m = strong.search(full_text)
-    if m:
-        # find nearby words for confidence
-        nearby = [w for w in words if "mrp" in w["text"].lower() or "₹" in w["text"] or "rs" in w["text"].lower()]
-        avg_conf = sum(w["confidence"] for w in nearby) / len(nearby) if nearby else 0.7
-        return {
-            "value": f"₹{m.group(1)}",
-            "confidence": _combine_confidence(_confidence_from_ocr(avg_conf), True),
-            "evidence_text": m.group(0),
-        }
+    patterns = [
+        re.compile(
+            r'(?:MRP|M\.R\.P\.?|Maximum\s+Retail\s+Price)\s*[:\-]?\s*(?:Rs\.?|₹|INR)?\s*[&]?\s*([0-9]+(?:\.[0-9]{1,2})?)',
+            re.IGNORECASE
+        ),
+        re.compile(
+            r'(?:Rs\.?|₹|INR)\s*([0-9]+(?:\.[0-9]{1,2})?)',
+            re.IGNORECASE
+        ),
+    ]
 
-    # Weaker: just a rupee symbol with a number
-    weak = re.compile(r'[₹]\s*([0-9]+(?:\.[0-9]{1,2})?)', re.IGNORECASE)
-    m = weak.search(full_text)
-    if m:
-        rupee_words = [w for w in words if "₹" in w["text"]]
-        avg_conf = sum(w["confidence"] for w in rupee_words) / len(rupee_words) if rupee_words else 0.5
-        return {
-            "value": f"₹{m.group(1)}",
-            "confidence": _combine_confidence(_confidence_from_ocr(avg_conf), False),
-            "evidence_text": m.group(0),
-        }
+    for pat in patterns:
+        m = pat.search(full_text)
+        if m:
+            nearby = [w for w in words if "mrp" in w["text"].lower() or "₹" in w["text"] or "rs" in w["text"].lower() or any(ch.isdigit() for ch in w["text"])]
+            avg_conf = sum(w["confidence"] for w in nearby) / len(nearby) if nearby else 0.7
+            return {
+                "value": f"₹{m.group(1)}",
+                "confidence": _combine_confidence(_confidence_from_ocr(avg_conf), True),
+                "evidence_text": m.group(0),
+            }
 
     return _empty_field()
 
@@ -143,21 +136,24 @@ def extract_manufacturer(full_text: str, words: List[Dict[str, Any]]) -> Dict[st
     patterns = [
         re.compile(
             r'(?:Manufactured\s+(?:and\s+)?(?:Packed\s+)?by|Mfd\.\s+by|Mfr\.\s+by|'
-            r'Packed\s+by|Packer\s*:|Imported\s+by|Distributed\s+by|Marketed\s+by)[:\s]+([^\n\.]{10,120})',
+            r'Packed\s+by|Packer\s*:|Imported\s+by|Distributed\s+by|Marketed\s+by)[:\s]+([^\n\.]{10,220})',
             re.IGNORECASE
         ),
         re.compile(
-            r'(?:Manufacturer|Packer|Importer)\s*[:\-]\s*([^\n\.]{10,120})',
+            r'(?:Manufacturer|Packer|Importer)\s*[:\-]\s*([^\n\.]{10,220})',
             re.IGNORECASE
         ),
     ]
     for pat in patterns:
         m = pat.search(full_text)
         if m:
-            mfr_words = [w for w in words if re.search(r'manufactur|packed|importer|packer', w["text"], re.I)]
+            manufacturer_text = m.group(1).strip()
+            if re.search(r'Plot\s+No\.|Industrial\s+Area|Pune|India|No\.', manufacturer_text, re.I):
+                manufacturer_text = manufacturer_text[:220]
+            mfr_words = [w for w in words if re.search(r'manufactur|packed|importer|packer|plot|industrial|pune', w["text"], re.I)]
             avg_conf = sum(w["confidence"] for w in mfr_words) / len(mfr_words) if mfr_words else 0.7
             return {
-                "value": m.group(1).strip()[:200],
+                "value": manufacturer_text[:220],
                 "confidence": _combine_confidence(_confidence_from_ocr(avg_conf), True),
                 "evidence_text": m.group(0)[:250],
             }
@@ -309,21 +305,26 @@ def extract_unit_sale_price(full_text: str, words: List[Dict[str, Any]]) -> Dict
 
 
 def extract_product_name(full_text: str, words: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """
-    Heuristic: take the first substantive line (>= 3 chars, not just numbers/symbols).
-    Product name is typically the most prominent text at the top.
-    """
-    # Split into lines and find first meaningful line
+    """Prefer the product title before the Net Qty or MRP label, rather than a single word."""
+    label_match = re.search(r'(.+?)(?=\s*(?:Net\s+Qty|Net\s+Quantity|MRP|Maximum\s+Retail\s+Price))', full_text, re.IGNORECASE | re.DOTALL)
+    if label_match:
+        candidate = re.sub(r'\s+', ' ', label_match.group(1)).strip(' .,:;-|/')
+        if len(candidate) >= 3 and not re.fullmatch(r'^[\d\s\W]+$', candidate):
+            top_words = [w for w in words if w["text"].lower() in candidate.lower().split()]
+            avg_conf = sum(w["confidence"] for w in top_words) / len(top_words) if top_words else 0.7
+            return {
+                "value": candidate[:100],
+                "confidence": _confidence_from_ocr(avg_conf),
+                "evidence_text": candidate,
+            }
+
     lines = [l.strip() for l in full_text.split('\n') if l.strip()]
     for line in lines:
         if len(line) >= 3 and not re.match(r'^[\d\s\W]+$', line):
-            # Skip common non-name lines
-            if not re.search(r'MRP|Rs\.|₹|MFD|Best\s+Before|Net\s+Qty|Manufactured', line, re.I):
-                top_words = [w for w in words if w["text"] in line]
-                avg_conf = sum(w["confidence"] for w in top_words) / len(top_words) if top_words else 0.6
+            if not re.search(r'MRP|Rs\.|₹|MFD|Best\s+Before|Net\s+Qty|Manufactured|Country\s+of\s+Origin|Consumer\s+Care', line, re.I):
                 return {
                     "value": line[:100],
-                    "confidence": "LOW",  # heuristic — always low confidence for product name
+                    "confidence": "LOW",
                     "evidence_text": line,
                 }
     return _empty_field()

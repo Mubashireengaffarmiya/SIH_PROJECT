@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Upload,
@@ -12,7 +12,10 @@ import {
   ShieldCheck,
   AlertCircle,
   ArrowRight,
-  Package
+  Package,
+  Camera,
+  Video,
+  Check
 } from 'lucide-react';
 import { analyzeImage } from '../api/client';
 
@@ -40,7 +43,11 @@ export default function NewInspection() {
   // For the backend simulation
   const [backendStep, setBackendStep] = useState<number>(-1);
   const [error, setError] = useState<string | null>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const navigate = useNavigate();
 
   const validateFile = (f: File): string | null => {
@@ -59,6 +66,7 @@ export default function NewInspection() {
     }
     setError(null);
     setFile(f);
+    if (preview) URL.revokeObjectURL(preview);
     const url = URL.createObjectURL(f);
     setPreview(url);
   };
@@ -68,6 +76,71 @@ export default function NewInspection() {
     setFile(null);
     setPreview(null);
     setError(null);
+  };
+
+  const stopCamera = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    setCameraOpen(false);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      stopCamera();
+      if (preview) URL.revokeObjectURL(preview);
+    };
+  }, [preview, stopCamera]);
+
+  const openCamera = async () => {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setCameraError('Camera capture is not supported in this browser.');
+      return;
+    }
+
+    try {
+      setCameraError(null);
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' },
+        audio: false,
+      });
+      streamRef.current = stream;
+      setCameraOpen(true);
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+    } catch {
+      setCameraError('Unable to access the camera. Please allow camera permission or upload a file instead.');
+      stopCamera();
+    }
+  };
+
+  const captureFromCamera = () => {
+    if (!videoRef.current) return;
+
+    const video = videoRef.current;
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth || 1280;
+    canvas.height = video.videoHeight || 720;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      setCameraError('Could not capture the camera image.');
+      return;
+    }
+
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        setCameraError('The captured photo was empty. Please try again.');
+        return;
+      }
+
+      const capturedFile = new File([blob], `capture-${Date.now()}.jpg`, { type: 'image/jpeg' });
+      setImageFile(capturedFile);
+      stopCamera();
+    }, 'image/jpeg', 0.92);
   };
 
   const onDrop = useCallback((e: React.DragEvent) => {
@@ -107,7 +180,12 @@ export default function NewInspection() {
       setBackendStep(4);
       await stepDelay(300);
 
-      navigate(`/analysis/${result.inspection_id}`, { state: { result } });
+      navigate(`/analysis/${result.inspection_id}`, {
+        state: {
+          result,
+          previewUrl: preview,
+        },
+      });
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
@@ -212,6 +290,47 @@ export default function NewInspection() {
                 )}
              </div>
 
+            <div className="flex flex-wrap gap-3 mb-4">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="btn-secondary flex items-center gap-2"
+              >
+                <Upload className="w-4 h-4" /> Upload file
+              </button>
+              <button
+                type="button"
+                onClick={openCamera}
+                className="btn-secondary flex items-center gap-2"
+              >
+                <Camera className="w-4 h-4" /> Use camera
+              </button>
+            </div>
+
+            {cameraOpen && (
+              <div className="mb-5 rounded-2xl border border-slate-700 bg-slate-950/60 p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2 text-slate-200">
+                    <Video className="w-4 h-4 text-blue-400" />
+                    <span className="text-sm font-medium">Camera preview</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={stopCamera}
+                    className="text-xs text-slate-300 hover:text-white"
+                  >
+                    Close
+                  </button>
+                </div>
+                <video ref={videoRef} className="w-full rounded-xl bg-black" playsInline muted />
+                <div className="mt-3 flex justify-center">
+                  <button type="button" onClick={captureFromCamera} className="btn-primary flex items-center gap-2">
+                    <Check className="w-4 h-4" /> Capture photo
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Upload area */}
             <div
               className={`relative rounded-2xl border-2 border-dashed transition-all duration-200 ${
@@ -298,12 +417,12 @@ export default function NewInspection() {
             </div>
 
             {/* Error */}
-            {error && (
+            {(error || cameraError) && (
               <div className="flex items-start gap-3 rounded-xl p-4 bg-red-500/10 border border-red-500/20">
                 <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5 text-red-400" />
                 <div>
                   <p className="text-sm font-medium text-red-400">Error</p>
-                  <p className="text-sm mt-0.5 text-red-300/80">{error}</p>
+                  <p className="text-sm mt-0.5 text-red-300/80">{error ?? cameraError}</p>
                 </div>
               </div>
             )}

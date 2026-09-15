@@ -13,9 +13,7 @@ opencv-python-headless
 numpy
 Pillow
 
-# OCR — Primary: PaddleOCR
-# Removed due to lack of Python 3.14 wheels on this environment.
-# We will use Tesseract fallback.
+# OCR — Primary: Tesseract
 
 # OCR — Fallback: Tesseract
 pytesseract

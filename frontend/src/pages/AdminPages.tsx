@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Shield, Users as UsersIcon, Settings, BarChart } from 'lucide-react';
+import { Settings } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
+import { listAdminUsers, listAuditLogs } from '../api/client';
 
 export default function AdminPages() {
   const location = useLocation();
@@ -11,13 +12,9 @@ export default function AdminPages() {
 
   useEffect(() => {
     if (path === 'users') {
-      fetch('http://localhost:8000/api/admin/users', {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-      }).then(r => r.json()).then(setUsers);
+      listAdminUsers().then(setUsers);
     } else if (path === 'audit') {
-      fetch('http://localhost:8000/api/admin/audit_logs', {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-      }).then(r => r.json()).then(setAuditLogs);
+      listAuditLogs().then(setAuditLogs);
     }
   }, [path]);
 
