@@ -15,7 +15,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { getInspection, downloadPdfReport, downloadDocxReport, reviewInspection } from '../api/client';
-import { StatusBadge, ConfidenceBadge, SeverityBadge } from '../components/Badges';
+import { StatusBadge, ConfidenceBadge } from '../components/Badges';
 import type { AnalysisResponse, InspectionDetail } from '../types';
 import { useAuth } from '../context/AuthContext';
 

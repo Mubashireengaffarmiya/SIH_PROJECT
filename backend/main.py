@@ -90,6 +90,11 @@ app.include_router(reviewer.router)
 async def on_startup():
     logger.info("Initialising database...")
     init_db()
+    db = next(get_db())
+    try:
+        auth.ensure_demo_users(db)
+    finally:
+        db.close()
     logger.info("SMART-LM backend ready.")
 
 
