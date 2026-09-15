@@ -13,8 +13,8 @@ opencv-python-headless
 numpy
 Pillow
 
-# OCR — Primary: Tesseract
-
+# OCR — Primary: PaddleOCR
+paddleocr
 # OCR — Fallback: Tesseract
 pytesseract
 
