@@ -55,7 +55,7 @@ class Inspection(Base):
     review_status = Column(String(50), nullable=True)   # PENDING | APPROVED | REJECTED | RETAKE
 
     declarations = relationship("Declaration", back_populates="inspection", cascade="all, delete-orphan")
-    violations = relationship("Violation", back_populates="inspection", cascade="all, delete-orphan")
+    evaluations = relationship("RuleEvaluationModel", back_populates="inspection", cascade="all, delete-orphan")
     reports = relationship("Report", back_populates="inspection", cascade="all, delete-orphan")
     review_actions = relationship("ReviewAction", back_populates="inspection", cascade="all, delete-orphan")
 
@@ -74,19 +74,20 @@ class Declaration(Base):
     inspection = relationship("Inspection", back_populates="declarations")
 
 
-class Violation(Base):
-    __tablename__ = "violations"
+class RuleEvaluationModel(Base):
+    __tablename__ = "rule_evaluations"
 
     id = Column(Integer, primary_key=True, index=True)
     inspection_id = Column(String(50), ForeignKey("inspections.inspection_id"), nullable=False)
-    field_name = Column(String(100), nullable=False)
-    reason = Column(Text, nullable=False)
-    severity = Column(String(20), nullable=False)       # HIGH | MEDIUM | LOW
-    confidence = Column(String(20), nullable=True)
-    rule_id = Column(String(50), nullable=True)
+    requirement = Column(Text, nullable=False)
+    extracted_value = Column(Text, nullable=True)
+    expected_requirement = Column(Text, nullable=True)
+    rule_reference = Column(String(255), nullable=True)
     evidence = Column(Text, nullable=True)
+    confidence = Column(String(20), nullable=True)
+    result = Column(String(50), nullable=False)
 
-    inspection = relationship("Inspection", back_populates="violations")
+    inspection = relationship("Inspection", back_populates="evaluations")
 
 
 class Report(Base):

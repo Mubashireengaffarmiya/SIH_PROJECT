@@ -27,7 +27,6 @@ class OCRResult(BaseModel):
     success: bool
     error: Optional[str] = None
     source_image: Optional[str] = None
-    source_image: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -70,20 +69,19 @@ class ExtractionResult(BaseModel):
 # Compliance
 # ---------------------------------------------------------------------------
 
-class ViolationDetail(BaseModel):
-    field_name: str
-    reason: str
-    severity: str              # HIGH | MEDIUM | LOW
-    confidence: str
-    rule_id: Optional[str] = None
+class RuleEvaluation(BaseModel):
+    requirement: str
+    extracted_value: Optional[str] = None
+    expected_requirement: str
+    rule_reference: str
     evidence: Optional[str] = None
-
+    confidence: str
+    result: str
 
 class ComplianceResult(BaseModel):
-    overall_status: str        # VERIFIED_COMPLIANT | POTENTIAL_VIOLATION | NEEDS_HUMAN_REVIEW
+    overall_status: str        # COMPLIANT | NON-COMPLIANT | NEEDS REVIEW
     overall_confidence: str    # HIGH | MEDIUM | LOW
-    field_statuses: dict[str, str]   # field → status string
-    violations: List[ViolationDetail]
+    evaluations: List[RuleEvaluation]
     summary: str
 
 
@@ -115,13 +113,14 @@ class DeclarationOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class ViolationOut(BaseModel):
-    field_name: str
-    reason: str
-    severity: str
-    confidence: Optional[str]
-    rule_id: Optional[str]
+class RuleEvaluationOut(BaseModel):
+    requirement: str
+    extracted_value: Optional[str]
+    expected_requirement: str
+    rule_reference: str
     evidence: Optional[str]
+    confidence: str
+    result: str
 
     model_config = {"from_attributes": True}
 
@@ -149,7 +148,7 @@ class InspectionDetail(BaseModel):
     image_path: Optional[str]
     is_demo: bool = False
     declarations: List[DeclarationOut] = []
-    violations: List[ViolationOut] = []
+    evaluations: List[RuleEvaluationOut] = []
 
     model_config = {"from_attributes": True}
 

@@ -16,25 +16,28 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+function getUserFromToken(t: string | null): User | null {
+  if (!t) return null;
+  try {
+    const decoded = jwtDecode(t) as any;
+    if (decoded && decoded.exp && decoded.exp * 1000 > Date.now()) {
+      return { username: decoded.sub, role: decoded.role };
+    }
+  } catch {
+    // invalid token
+  }
+  return null;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(() => getUserFromToken(token));
 
-  useEffect(() => {
-    if (token) {
-      try {
-        const decoded = jwtDecode(token) as any;
-        // Check expiry
-        if (decoded.exp * 1000 < Date.now()) {
-          logout();
-        } else {
-          setUser({ username: decoded.sub, role: decoded.role });
-        }
-      } catch (err) {
-        logout();
-      }
-    }
-  }, [token]);
+  const logout = () => {
+    localStorage.removeItem('token');
+    setToken(null);
+    setUser(null);
+  };
 
   const login = (newToken: string, role: string, username: string) => {
     localStorage.setItem('token', newToken);
@@ -42,11 +45,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser({ username, role });
   };
 
-  const logout = () => {
-    localStorage.removeItem('token');
-    setToken(null);
-    setUser(null);
-  };
+  useEffect(() => {
+    const validUser = getUserFromToken(token);
+    if (token && !validUser) {
+      logout();
+    }
+  }, [token]);
 
   return (
     <AuthContext.Provider value={{ user, token, login, logout, isAuthenticated: !!token }}>

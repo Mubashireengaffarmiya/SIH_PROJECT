@@ -58,7 +58,7 @@ export default function NewInspection() {
     return null;
   };
 
-  const setImageFile = (f: File) => {
+  const setImageFile = useCallback((f: File) => {
     const err = validateFile(f);
     if (err) {
       setError(err);
@@ -66,10 +66,11 @@ export default function NewInspection() {
     }
     setError(null);
     setFile(f);
-    if (preview) URL.revokeObjectURL(preview);
-    const url = URL.createObjectURL(f);
-    setPreview(url);
-  };
+    setPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(f);
+    });
+  }, []);
 
   const removeFile = () => {
     if (preview) URL.revokeObjectURL(preview);
@@ -148,7 +149,7 @@ export default function NewInspection() {
     setDragging(false);
     const f = e.dataTransfer.files[0];
     if (f) setImageFile(f);
-  }, []);
+  }, [setImageFile]);
 
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];

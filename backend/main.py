@@ -19,10 +19,10 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
 # Internal imports
-from database.database import init_db, get_db, Inspection, Declaration, Violation, Report
+from database.database import init_db, get_db, Inspection, Declaration, RuleEvaluationModel, Report
 from models.schemas import (
     AnalysisResponse, InspectionSummary, InspectionDetail,
-    DashboardStats, DeclarationOut, ViolationOut,
+    DashboardStats, DeclarationOut, RuleEvaluationOut,
 )
 from services.image_processing import load_and_preprocess
 from services.ocr import run_ocr, get_ocr_health
@@ -221,16 +221,17 @@ async def analyze_image(
             evidence_text=field_data.get("evidence_text"),
         ))
 
-    # Violations
-    for v in compliance["violations"]:
-        db.add(Violation(
+    # Rule Evaluations
+    for eval_item in compliance["evaluations"]:
+        db.add(RuleEvaluationModel(
             inspection_id=inspection_id,
-            field_name=v["field_name"],
-            reason=v["reason"],
-            severity=v["severity"],
-            confidence=v.get("confidence", "LOW"),
-            rule_id=v.get("rule_id"),
-            evidence=v.get("evidence"),
+            requirement=eval_item["requirement"],
+            extracted_value=eval_item.get("extracted_value"),
+            expected_requirement=eval_item["expected_requirement"],
+            rule_reference=eval_item["rule_reference"],
+            evidence=eval_item.get("evidence"),
+            confidence=eval_item.get("confidence", "LOW"),
+            result=eval_item["result"],
         ))
 
     db.commit()
@@ -239,7 +240,7 @@ async def analyze_image(
     # --- Build response ---
     from models.schemas import (
         ImageQualityResult, OCRResult, OCRWord, ExtractionResult,
-        ExtractedField, ComplianceResult, ViolationDetail, AnalysisResponse,
+        ExtractedField, ComplianceResult, RuleEvaluation, AnalysisResponse,
     )
 
     def _to_extracted_field(d: dict) -> ExtractedField:
@@ -281,8 +282,7 @@ async def analyze_image(
         compliance=ComplianceResult(
             overall_status=compliance["overall_status"],
             overall_confidence=compliance["overall_confidence"],
-            field_statuses=compliance["field_statuses"],
-            violations=[ViolationDetail(**v) for v in compliance["violations"]],
+            evaluations=[RuleEvaluation(**e) for e in compliance["evaluations"]],
             summary=compliance["summary"],
         ),
         created_at=now,
@@ -343,7 +343,7 @@ def get_inspection(inspection_id: str, db: Session = Depends(get_db)):
         image_path=image_url,
         is_demo=insp.is_demo,
         declarations=[DeclarationOut.model_validate(d) for d in insp.declarations],
-        violations=[ViolationOut.model_validate(v) for v in insp.violations],
+        evaluations=[RuleEvaluationOut.model_validate(e) for e in insp.evaluations],
     )
 
 

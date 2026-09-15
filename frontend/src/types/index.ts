@@ -42,22 +42,22 @@ export interface ExtractionResult {
   unit_sale_price: ExtractedField;
 }
 
-export type ComplianceStatus = 'VERIFIED_COMPLIANT' | 'POTENTIAL_VIOLATION' | 'NEEDS_HUMAN_REVIEW';
+export type ComplianceStatus = 'COMPLIANT' | 'NON-COMPLIANT' | 'NEEDS REVIEW' | 'NOT APPLICABLE' | 'NOT VERIFIABLE';
 
-export interface ViolationDetail {
-  field_name: string;
-  reason: string;
-  severity: 'HIGH' | 'MEDIUM' | 'LOW';
-  confidence: 'HIGH' | 'MEDIUM' | 'LOW';
-  rule_id: string | null;
+export interface RuleEvaluation {
+  requirement: string;
+  extracted_value: string | null;
+  expected_requirement: string;
+  rule_reference: string;
   evidence: string | null;
+  confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+  result: ComplianceStatus;
 }
 
 export interface ComplianceResult {
   overall_status: ComplianceStatus;
   overall_confidence: 'HIGH' | 'MEDIUM' | 'LOW';
-  field_statuses: Record<string, ComplianceStatus>;
-  violations: ViolationDetail[];
+  evaluations: RuleEvaluation[];
   summary: string;
 }
 
@@ -90,13 +90,14 @@ export interface DeclarationOut {
   evidence_text: string | null;
 }
 
-export interface ViolationOut {
-  field_name: string;
-  reason: string;
-  severity: string;
-  confidence: string | null;
-  rule_id: string | null;
+export interface RuleEvaluationOut {
+  requirement: string;
+  extracted_value: string | null;
+  expected_requirement: string;
+  rule_reference: string;
   evidence: string | null;
+  confidence: string | null;
+  result: ComplianceStatus;
 }
 
 export interface InspectionDetail {
@@ -109,7 +110,7 @@ export interface InspectionDetail {
   image_path: string | null;
   is_demo: boolean;
   declarations: DeclarationOut[];
-  violations: ViolationOut[];
+  evaluations: RuleEvaluationOut[];
 }
 
 export interface DashboardStats {
