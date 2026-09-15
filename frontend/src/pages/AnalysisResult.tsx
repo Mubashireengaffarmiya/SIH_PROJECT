@@ -19,7 +19,7 @@ import { StatusBadge, ConfidenceBadge, SeverityBadge } from '../components/Badge
 import type { AnalysisResponse, InspectionDetail } from '../types';
 import { useAuth } from '../context/AuthContext';
 
-type Tab = 'overview' | 'extracted' | 'compliance' | 'violations' | 'reports';
+type Tab = 'overview' | 'extracted' | 'compliance' | 'reports';
 
 // Field display names
 const FIELD_LABELS: Record<string, string> = {
@@ -66,12 +66,12 @@ export default function AnalysisResult() {
       }
     };
     fetchDetail();
-  }, [id]);
+  }, [id, result]);
 
   const inspection = detail;
-  const status = result?.compliance.overall_status ?? inspection?.status ?? 'NEEDS_HUMAN_REVIEW';
+  const status = result?.compliance.overall_status ?? inspection?.status ?? 'NEEDS REVIEW';
   const confidence = result?.compliance.overall_confidence ?? inspection?.overall_confidence ?? 'LOW';
-  const violations = result?.compliance.violations ?? inspection?.violations ?? [];
+  const evaluations = result?.compliance.evaluations ?? inspection?.evaluations ?? [];
   const declarations = result
     ? ([
         'product_name', 'mrp', 'net_quantity', 'manufacturer', 'manufacturing_date',
@@ -87,9 +87,7 @@ export default function AnalysisResult() {
 
   const imageUrl = result
     ? null // we'll show local preview via state
-    : inspection?.image_path
-    ? `http://localhost:8000${inspection.image_path}`
-    : null;
+    : inspection?.image_path ?? null;
 
   const localPreviewUrl = (location.state as { previewUrl?: string })?.previewUrl ?? null;
   const effectiveImageUrl = localPreviewUrl ?? imageUrl;
@@ -100,7 +98,7 @@ export default function AnalysisResult() {
     try {
       if (type === 'pdf') await downloadPdfReport(id);
       else await downloadDocxReport(id);
-    } catch (e) {
+    } catch {
       alert('Report generation failed. Make sure the backend is running.');
     } finally {
       setDownloading(null);
@@ -148,8 +146,7 @@ export default function AnalysisResult() {
   const tabs: { key: Tab; label: string; count?: number }[] = [
     { key: 'overview', label: 'Overview' },
     { key: 'extracted', label: 'Declarations', count: declarations.length },
-    { key: 'compliance', label: 'Compliance' },
-    { key: 'violations', label: 'Violations', count: violations.length },
+    { key: 'compliance', label: 'Compliance', count: evaluations.filter(e => e.result === 'NON-COMPLIANT').length },
     { key: 'reports', label: 'Reports' },
   ];
 
@@ -170,40 +167,40 @@ export default function AnalysisResult() {
         className="rounded-2xl p-6"
         style={{
           background:
-            status === 'VERIFIED_COMPLIANT'
+            status === 'COMPLIANT'
               ? 'linear-gradient(135deg, rgba(16,185,129,0.12), rgba(16,185,129,0.05))'
-              : status === 'POTENTIAL_VIOLATION'
+              : status === 'NON-COMPLIANT'
               ? 'linear-gradient(135deg, rgba(239,68,68,0.12), rgba(239,68,68,0.05))'
               : 'linear-gradient(135deg, rgba(245,158,11,0.12), rgba(245,158,11,0.05))',
           border:
-            status === 'VERIFIED_COMPLIANT'
+            status === 'COMPLIANT'
               ? '1px solid rgba(16,185,129,0.25)'
-              : status === 'POTENTIAL_VIOLATION'
+              : status === 'NON-COMPLIANT'
               ? '1px solid rgba(239,68,68,0.25)'
               : '1px solid rgba(245,158,11,0.25)',
         }}
       >
         <div className="flex flex-wrap items-center gap-4">
           <div>
-            {status === 'VERIFIED_COMPLIANT' && (
+            {status === 'COMPLIANT' && (
               <CheckCircle className="w-10 h-10" style={{ color: '#6ee7b7' }} />
             )}
-            {status === 'POTENTIAL_VIOLATION' && (
+            {status === 'NON-COMPLIANT' && (
               <AlertTriangle className="w-10 h-10" style={{ color: '#fca5a5' }} />
             )}
-            {status === 'NEEDS_HUMAN_REVIEW' && (
+            {(status === 'NEEDS REVIEW' || status === 'NOT VERIFIABLE') && (
               <Eye className="w-10 h-10" style={{ color: '#fcd34d' }} />
             )}
           </div>
           <div className="flex-1">
             <div className="flex flex-wrap items-center gap-3 mb-1">
-              <StatusBadge status={status as 'VERIFIED_COMPLIANT' | 'POTENTIAL_VIOLATION' | 'NEEDS_HUMAN_REVIEW'} />
+              <StatusBadge status={status as any} />
               <ConfidenceBadge confidence={confidence} />
             </div>
             <p className="text-white font-bold text-lg">
-              {status === 'VERIFIED_COMPLIANT' && 'All detected declarations verified'}
-              {status === 'POTENTIAL_VIOLATION' && 'Potential compliance issues detected'}
-              {status === 'NEEDS_HUMAN_REVIEW' && 'Human review required'}
+              {status === 'COMPLIANT' && 'Package complies with Legal Metrology Rules, 2011'}
+              {status === 'NON-COMPLIANT' && 'Package DOES NOT comply with Legal Metrology Rules, 2011'}
+              {(status === 'NEEDS REVIEW' || status === 'NOT VERIFIABLE') && 'Human review required'}
             </p>
             <p className="text-sm mt-1" style={{ color: 'rgba(226,232,240,0.55)' }}>
               {result?.compliance.summary ?? '—'}
@@ -218,7 +215,7 @@ export default function AnalysisResult() {
         </div>
         
         {/* Reviewer Actions */}
-        {status === 'NEEDS_HUMAN_REVIEW' && ['REVIEWER', 'ADMIN'].includes(user?.role || '') && (
+        {status === 'NEEDS REVIEW' && ['REVIEWER', 'ADMIN'].includes(user?.role || '') && (
           <div className="mt-6 pt-6 border-t border-slate-700/50 flex flex-wrap gap-4">
             <button 
               onClick={() => handleReviewAction('CONFIRM')}
@@ -421,74 +418,77 @@ export default function AnalysisResult() {
           </div>
         )}
 
-        {activeTab === 'compliance' && result && (
+        {activeTab === 'compliance' && (
           <div className="space-y-4">
-            <div className="glass-card p-5">
-              <h3 className="text-sm font-semibold text-white mb-4">Rule Check Results</h3>
-              <div className="space-y-2">
-                {Object.entries(result.compliance.field_statuses).map(([ruleId, status]) => (
-                  <div
-                    key={ruleId}
-                    className="flex items-center justify-between p-3 rounded-lg"
-                    style={{ background: 'rgba(255,255,255,0.03)' }}
-                  >
-                    <span className="text-xs font-mono" style={{ color: 'rgba(226,232,240,0.55)' }}>
-                      {ruleId}
-                    </span>
-                    <StatusBadge status={status as 'VERIFIED_COMPLIANT' | 'POTENTIAL_VIOLATION' | 'NEEDS_HUMAN_REVIEW'} />
-                  </div>
-                ))}
+            <div className="glass-card overflow-hidden">
+              <div className="p-4 border-b" style={{ borderColor: 'rgba(212,175,55,0.1)' }}>
+                <h3 className="text-sm font-semibold text-white">LEGAL METROLOGY COMPLIANCE</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm text-slate-300">
+                  <thead className="bg-slate-800/50 text-xs uppercase font-semibold text-slate-400">
+                    <tr>
+                      <th className="px-4 py-3">Rule/Requirement</th>
+                      <th className="px-4 py-3">Extracted Declaration</th>
+                      <th className="px-4 py-3">Evidence</th>
+                      <th className="px-4 py-3 text-center">Result</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-700/50">
+                    {evaluations.map((e, i) => (
+                      <tr key={i} className="hover:bg-slate-800/30 transition-colors">
+                        <td className="px-4 py-4 max-w-xs">
+                          <p className="font-semibold text-slate-200">{e.rule_reference}</p>
+                          <p className="text-xs text-slate-400 mt-1">{e.requirement}</p>
+                          <p className="text-[10px] text-slate-500 mt-1">Expected: {e.expected_requirement}</p>
+                        </td>
+                        <td className="px-4 py-4">
+                          {e.extracted_value ? (
+                            <span className="text-slate-200 font-medium">{e.extracted_value}</span>
+                          ) : (
+                            <span className="text-slate-500 italic">Not detected</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-4 max-w-xs">
+                          {e.evidence ? (
+                            <div className="text-xs font-mono text-slate-400 break-words">
+                              "{e.evidence}"
+                            </div>
+                          ) : (
+                            <span className="text-slate-500 italic">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-4 text-center">
+                          <div className="flex flex-col items-center gap-1.5">
+                            <StatusBadge status={e.result as any} />
+                            <ConfidenceBadge confidence={e.confidence ?? 'LOW'} />
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
-          </div>
-        )}
-
-        {activeTab === 'violations' && (
-          <div className="space-y-4">
-            {violations.length === 0 ? (
-              <div className="glass-card p-12 text-center">
-                <CheckCircle className="w-12 h-12 mx-auto mb-3" style={{ color: '#6ee7b7' }} />
-                <p className="text-white font-semibold">No violations flagged</p>
-                <p className="text-sm mt-1" style={{ color: 'rgba(226,232,240,0.4)' }}>
-                  All checked declarations were found or are within review bounds
-                </p>
+            
+            <div className="glass-card p-5">
+              <h3 className="text-sm font-semibold text-white mb-2 uppercase">Overall Result</h3>
+              <div className="mb-4">
+                <StatusBadge status={status as any} />
               </div>
-            ) : (
-              violations.map((v, i) => (
-                <div
-                  key={i}
-                  className="glass-card p-5"
-                  style={{
-                    borderLeft: `3px solid ${v.severity === 'HIGH' ? '#f87171' : v.severity === 'MEDIUM' ? '#fbbf24' : '#60a5fa'}`,
-                  }}
-                >
-                  <div className="flex flex-wrap items-start gap-3 mb-3">
-                    <div className="flex-1">
-                      <p className="font-semibold text-white">
-                        {FIELD_LABELS[v.field_name] ?? v.field_name.replace(/_/g, ' ')}
-                      </p>
-                    </div>
-                    <div className="flex gap-2">
-                      <SeverityBadge severity={v.severity} />
-                      <ConfidenceBadge confidence={v.confidence ?? 'LOW'} />
-                    </div>
-                  </div>
-                  <p className="text-sm mb-3" style={{ color: 'rgba(226,232,240,0.65)' }}>
-                    {v.reason}
-                  </p>
-                  {v.rule_id && (
-                    <p className="text-xs font-mono" style={{ color: 'rgba(212,175,55,0.6)' }}>
-                      Rule: {v.rule_id}
-                    </p>
-                  )}
-                  {v.evidence && (
-                    <p className="text-xs mt-1 font-mono" style={{ color: 'rgba(226,232,240,0.3)' }}>
-                      Evidence: "{v.evidence.slice(0, 100)}"
-                    </p>
-                  )}
-                </div>
-              ))
-            )}
+              {evaluations.some(e => e.result === 'NON-COMPLIANT' || e.result === 'NEEDS REVIEW') && (
+                <>
+                  <h4 className="text-xs font-semibold text-slate-400 mb-2 mt-4 uppercase">Reasons</h4>
+                  <ul className="list-disc pl-5 text-sm text-slate-300 space-y-1">
+                    {evaluations.filter(e => e.result === 'NON-COMPLIANT' || e.result === 'NEEDS REVIEW').map((e, i) => (
+                      <li key={i}>
+                        <span className="font-semibold text-slate-200">{e.rule_reference}:</span> {e.result === 'NON-COMPLIANT' ? 'Failed requirement' : 'Could not confidently verify'} ({e.requirement})
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </div>
           </div>
         )}
 

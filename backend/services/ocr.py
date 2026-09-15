@@ -20,31 +20,6 @@ import cv2
 
 from services.image_processing import generate_preprocessed_variants
 
-
-def _candidate_tesseract_paths() -> List[str]:
-    paths: List[str] = []
-
-    env_path = os.environ.get("TESSERACT_CMD")
-    if env_path and env_path.strip():
-        paths.append(env_path.strip())
-
-    path_from_path = shutil.which("tesseract")
-    if path_from_path:
-        paths.append(path_from_path)
-
-    common_windows = [
-        r"C:\Program Files\Tesseract-OCR\tesseract.exe",
-        r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
-        os.path.expandvars(r"%LOCALAPPDATA%\Programs\Tesseract-OCR\tesseract.exe"),
-        os.path.expandvars(r"%ProgramFiles%\Tesseract-OCR\tesseract.exe"),
-        os.path.expandvars(r"%ProgramW6432%\Tesseract-OCR\tesseract.exe"),
-    ]
-    for candidate in common_windows:
-        if candidate and candidate not in paths:
-            paths.append(candidate)
-
-    return paths
-
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------

@@ -12,7 +12,6 @@ export default function ReviewQueue() {
   const navigate = useNavigate();
 
   const loadQueue = async () => {
-    setLoading(true);
     try {
       setQueue(await getReviewQueue());
     } catch (err) {

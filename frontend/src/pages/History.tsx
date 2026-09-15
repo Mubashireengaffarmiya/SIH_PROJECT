@@ -19,7 +19,6 @@ export default function History() {
   const navigate = useNavigate();
 
   const load = async () => {
-    setLoading(true);
     setError(null);
     try {
       const data = await listInspections();
@@ -29,6 +28,11 @@ export default function History() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const refresh = () => {
+    setLoading(true);
+    load();
   };
 
   useEffect(() => {
@@ -72,7 +76,7 @@ export default function History() {
             />
           </div>
           <button
-            onClick={load}
+            onClick={refresh}
             className="btn-ghost flex items-center gap-2"
             disabled={loading}
           >

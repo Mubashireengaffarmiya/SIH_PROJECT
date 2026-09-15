@@ -24,16 +24,20 @@ export default function Dashboard() {
   const { user } = useAuth();
 
   const load = async () => {
-    setLoading(true);
     try {
       const data = await getDashboard();
       setStats(data);
       setBackendOk(true);
-    } catch (err: unknown) {
+    } catch {
       setBackendOk(false);
     } finally {
       setLoading(false);
     }
+  };
+
+  const refresh = () => {
+    setLoading(true);
+    load();
   };
 
   useEffect(() => {
@@ -111,7 +115,7 @@ export default function Dashboard() {
           </p>
         </div>
         <button
-          onClick={load}
+          onClick={refresh}
           className="flex items-center gap-2 btn-ghost"
           disabled={loading}
         >
