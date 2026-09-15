@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Lock, User, Eye, EyeOff, ShieldCheck } from 'lucide-react';
@@ -27,7 +28,11 @@ export default function Login() {
       else navigate('/admin/users');
       
     } catch (err: any) {
-      setError(err.message || 'Failed to login');
+      if (axios.isAxiosError(err) && !err.response) {
+        setError('Unable to reach the server. Start the backend on port 8000 and try again.');
+      } else {
+        setError(err.response?.data?.detail || err.message || 'Failed to login');
+      }
     } finally {
       setLoading(false);
     }

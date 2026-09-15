@@ -6,9 +6,11 @@ import type {
   InspectionSummary,
 } from '../types';
 
+const apiBaseUrl = import.meta.env.VITE_API_URL ?? '';
+
 // When using Vite proxy, /api routes go to localhost:8000 automatically
 const api = axios.create({
-  baseURL: '',
+  baseURL: apiBaseUrl,
   timeout: 120000, // 2 min — OCR can be slow on first load
   headers: {
     Accept: 'application/json',

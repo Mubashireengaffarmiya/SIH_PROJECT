@@ -24,12 +24,30 @@ class Token(BaseModel):
     role: str
     username: str
 
+DEMO_USERS = (
+    ("inspector", "Inspector@123", "INSPECTOR", "Demo Inspector"),
+    ("reviewer", "Reviewer@123", "REVIEWER", "Demo Reviewer"),
+    ("admin", "Admin@123", "ADMIN", "Demo Admin"),
+)
+
 def verify_password(plain_password, hashed_password):
     # Passlib hashes start with $2b$ but some might be strings, so encode to bytes
     return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
 
 def get_password_hash(password):
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+def ensure_demo_users(db):
+    for username, password, role, full_name in DEMO_USERS:
+        if db.query(User).filter(User.username == username).first() is None:
+            db.add(User(
+                username=username,
+                hashed_password=get_password_hash(password),
+                role=role,
+                full_name=full_name,
+                email=f"{username}@smartlm.demo",
+            ))
+    db.commit()
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
