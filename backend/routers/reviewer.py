@@ -25,7 +25,7 @@ def get_review_queue(db: Session = Depends(get_db), current_user: User = Depends
             status=insp.status,
             overall_confidence=insp.overall_confidence,
             image_quality=insp.image_quality,
-            violation_count=len(insp.violations),
+            violation_count=sum(1 for evaluation in insp.evaluations if evaluation.result == "NON-COMPLIANT"),
             is_demo=insp.is_demo,
         ))
     return result

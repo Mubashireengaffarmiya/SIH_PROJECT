@@ -319,7 +319,7 @@ def list_inspections(skip: int = 0, limit: int = 50, db: Session = Depends(get_d
             status=insp.status,
             overall_confidence=insp.overall_confidence,
             image_quality=insp.image_quality,
-            violation_count=len(insp.violations),
+            violation_count=sum(1 for evaluation in insp.evaluations if evaluation.result == "NON-COMPLIANT"),
             is_demo=insp.is_demo,
         ))
     return result
@@ -378,7 +378,7 @@ def dashboard_stats(db: Session = Depends(get_db)):
             status=i.status,
             overall_confidence=i.overall_confidence,
             image_quality=i.image_quality,
-            violation_count=len(i.violations),
+            violation_count=sum(1 for evaluation in i.evaluations if evaluation.result == "NON-COMPLIANT"),
             is_demo=i.is_demo,
         )
         for i in recent_raw
@@ -418,14 +418,15 @@ def _build_report_data(insp: Inspection) -> dict:
         ],
         "violations": [
             {
-                "field_name": v.field_name,
-                "reason": v.reason,
-                "severity": v.severity,
-                "confidence": v.confidence,
-                "rule_id": v.rule_id,
-                "evidence": v.evidence,
+                "field_name": evaluation.rule_reference,
+                "reason": evaluation.requirement,
+                "severity": evaluation.result,
+                "confidence": evaluation.confidence,
+                "rule_id": evaluation.rule_reference,
+                "evidence": evaluation.evidence,
             }
-            for v in insp.violations
+            for evaluation in insp.evaluations
+            if evaluation.result == "NON-COMPLIANT"
         ],
     }
 

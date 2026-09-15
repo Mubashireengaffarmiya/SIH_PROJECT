@@ -18,7 +18,78 @@ import re
 import logging
 from typing import List, Dict, Any, Optional, Tuple
 
+import cv2
+import pytesseract
+
 logger = logging.getLogger(__name__)
+
+
+def preprocess_mrp_crop(cropped_img):
+    """Enlarges and sharpens the cropped region to improve digit OCR."""
+    gray = cv2.cvtColor(cropped_img, cv2.COLOR_BGR2GRAY)
+    resized = cv2.resize(
+        gray,
+        None,
+        fx=3,
+        fy=3,
+        interpolation=cv2.INTER_CUBIC
+    )
+    blurred = cv2.GaussianBlur(resized, (3, 3), 0)
+    _, thresh = cv2.threshold(
+        blurred,
+        0,
+        255,
+        cv2.THRESH_BINARY + cv2.THRESH_OTSU
+    )
+    return thresh
+
+
+def _get_mrp_crop_from_image(source_image: str, words: List[Dict[str, Any]]) -> Optional[Any]:
+    if not source_image:
+        return None
+
+    try:
+        image = cv2.imread(source_image)
+    except Exception:
+        return None
+    if image is None or image.size == 0:
+        return None
+
+    relevant_indices = []
+    for i, word in enumerate(words):
+        text = str(word.get('text', '') or '').strip()
+        if not text:
+            continue
+        lowered = text.lower()
+        if 'mrp' in lowered or '₹' in text or 'rs' in lowered or 'inr' in lowered:
+            relevant_indices.append(i)
+        elif any(ch.isdigit() for ch in text) and any(token in lowered for token in ['mrp', 'rs', 'inr', '₹']):
+            relevant_indices.append(i)
+
+    if not relevant_indices:
+        return None
+
+    xs = []
+    ys = []
+    for idx in relevant_indices:
+        bbox = words[idx].get('bbox') or []
+        if len(bbox) < 4:
+            continue
+        x1, y1, x2, y2 = [float(v) for v in bbox[:4]]
+        xs.extend([x1, x2])
+        ys.extend([y1, y2])
+
+    if not xs or not ys:
+        return None
+
+    x1 = max(0, int(min(xs) - 15))
+    y1 = max(0, int(min(ys) - 15))
+    x2 = min(image.shape[1] - 1, int(max(xs) + 15))
+    y2 = min(image.shape[0] - 1, int(max(ys) + 15))
+    if x2 <= x1 or y2 <= y1:
+        return None
+
+    return image[y1:y2, x1:x2]
 
 
 # ---------------------------------------------------------------------------
@@ -63,7 +134,7 @@ def _empty_field() -> Dict[str, Any]:
 # Individual Field Extractors
 # ---------------------------------------------------------------------------
 
-def extract_mrp(full_text: str, words: List[Dict[str, Any]]) -> Dict[str, Any]:
+def extract_mrp(full_text: str, words: List[Dict[str, Any]], source_image: Optional[str] = None) -> Dict[str, Any]:
     """
     Detect MRP patterns:
       MRP ₹50 / MRP Rs.50 / MRP: 50 / Maximum Retail Price ₹50 / MRP & 250.00
@@ -82,13 +153,29 @@ def extract_mrp(full_text: str, words: List[Dict[str, Any]]) -> Dict[str, Any]:
     for pat in patterns:
         m = pat.search(full_text)
         if m:
-            nearby = [w for w in words if "mrp" in w["text"].lower() or "₹" in w["text"] or "rs" in w["text"].lower() or any(ch.isdigit() for ch in w["text"])]
+            nearby = [w for w in words if "mrp" in w["text"].lower() or "₹" in w["text"] or "rs" in w["text"].lower() or any(ch.isdigit() for ch in w["text"]) ]
             avg_conf = sum(w["confidence"] for w in nearby) / len(nearby) if nearby else 0.7
             return {
                 "value": f"₹{m.group(1)}",
                 "confidence": _combine_confidence(_confidence_from_ocr(avg_conf), True),
                 "evidence_text": m.group(0),
             }
+
+    if source_image:
+        try:
+            mrp_crop = _get_mrp_crop_from_image(source_image, words)
+            if mrp_crop is not None:
+                cleaned_crop = preprocess_mrp_crop(mrp_crop)
+                text = pytesseract.image_to_string(cleaned_crop, config=r'--psm 6 -c tessedit_char_whitelist=0123456789.')
+                digit_text = re.sub(r'[^0-9.]', '', text.strip())
+                if digit_text and re.fullmatch(r'\d+(?:\.\d+)?', digit_text):
+                    return {
+                        "value": f"₹{digit_text}",
+                        "confidence": "MEDIUM",
+                        "evidence_text": digit_text,
+                    }
+        except Exception as exc:
+            logger.warning("Targeted MRP OCR failed: %s", exc)
 
     return _empty_field()
 
@@ -341,6 +428,7 @@ def extract_all(ocr_result: Dict[str, Any]) -> Dict[str, Any]:
     """
     full_text = ocr_result.get("full_text", "")
     words = ocr_result.get("words", [])
+    source_image = ocr_result.get("source_image")
 
     # Reconstruct multi-line text from words (PaddleOCR loses newlines in full_text)
     # We'll use the full_text as-is since we've already joined words
@@ -349,7 +437,7 @@ def extract_all(ocr_result: Dict[str, Any]) -> Dict[str, Any]:
 
     return {
         "product_name": extract_product_name(multiline_text, words),
-        "mrp": extract_mrp(multiline_text, words),
+        "mrp": extract_mrp(multiline_text, words, source_image=source_image),
         "net_quantity": extract_net_quantity(multiline_text, words),
         "manufacturer": extract_manufacturer(multiline_text, words),
         "manufacturing_date": extract_manufacturing_date(multiline_text, words),

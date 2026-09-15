@@ -1,164 +1,93 @@
-# SMART-LM (Smart Legal Metrology Compliance & Inspection System)
+# SMART-LM
 
-**SIH 2026 Prototype — Problem Statement SIH26034**
+Smart Legal Metrology Compliance & Inspection System for SIH 2026 Problem Statement SIH26034.
 
-SMART-LM is an AI-powered inspection assistance tool designed for Legal Metrology officers. It uses Optical Character Recognition (OCR) and a deterministic rule engine to automatically extract and verify mandatory declarations on packaged commodities, flagging potential violations for human review.
+## Proposed Solution
 
----
+SMART-LM is a digital inspection-assistance system for Legal Metrology officers. It analyzes packaged-product label images and automatically checks whether mandatory declarations are present and readable.
 
-## Architecture & Technology Stack
+The solution:
 
-The project is built as a single cohesive application using a modern tech stack:
+- accepts a product-label image from the inspector;
+- checks image quality and improves the image for recognition;
+- reads label text using OCR;
+- extracts product name, MRP, net quantity, manufacturer, dates, country of origin, and consumer-care details;
+- compares extracted declarations with configurable Legal Metrology rules;
+- displays compliance status, confidence, and supporting evidence;
+- sends uncertain or incomplete results to a human reviewer;
+- stores inspection history and generates PDF or DOCX reports.
 
-- **Frontend:** React + Vite + TypeScript + Tailwind CSS (v4)
-- **Backend:** Python + FastAPI + Uvicorn
-- **Image Processing & OCR:** OpenCV, NumPy, Pillow, PaddleOCR (with Tesseract 5 fallback)
-- **Database:** SQLite (SQLAlchemy ORM, structured to easily swap to PostgreSQL)
-- **Reporting:** ReportLab (PDF) and python-docx (DOCX)
+SMART-LM supports the officer's decision-making process. It does not replace the final legal decision or physical verification by a qualified inspector.
 
-### Why this stack?
-- **FastAPI** handles multipart file uploads quickly and provides automatic API documentation.
-- **PaddleOCR** provides state-of-the-art text extraction including orientation handling, with a seamless fallback to **Tesseract** if installation issues occur on Windows.
-- **Deterministic regex extraction** is used instead of LLMs for reliability, speed, and exact evidence highlighting without hallucinations.
-- **React + Tailwind** provides a responsive, professional, government-style dashboard that works on desktop and mobile without needing a separate mobile app.
+## Technology Stack Details
 
----
+### Programming Languages
 
-## Setup & Installation
+- **Python:** Backend API, OCR pipeline, image processing, extraction, compliance evaluation, database access, and report generation.
+- **TypeScript:** React frontend pages, components, routing, API client, authentication state, and shared data types.
+- **JavaScript:** Frontend tooling and Vite runtime modules.
+- **HTML:** Frontend document entry point.
+- **CSS:** Responsive styling and Tailwind CSS utilities.
 
-### Prerequisites
-- Node.js (v18+)
-- Python (3.10+)
+### Frameworks and Libraries
 
-### 1. Backend Setup
+- **React:** User interface for login, dashboard, inspection upload, history, review queue, and reports.
+- **Vite:** Frontend development server and production bundler.
+- **Tailwind CSS:** Responsive application styling.
+- **FastAPI:** Backend REST API and request validation.
+- **Uvicorn:** ASGI server for running the FastAPI application.
+- **Axios:** Frontend-to-backend HTTP communication.
+- **OpenCV:** Image quality assessment and OCR preprocessing.
+- **NumPy and Pillow:** Image and numerical data processing.
+- **PaddleOCR:** Primary OCR engine when available.
+- **Tesseract 5 with pytesseract:** OCR fallback and targeted MRP digit recognition.
+- **SQLAlchemy:** Object-relational database access.
+- **Pydantic:** API request and response schemas.
+- **ReportLab:** PDF report generation.
+- **python-docx:** DOCX report generation.
+- **Pytest:** Backend testing.
 
-Open a terminal and navigate to the `backend` directory:
+### Database and Configuration
 
-```bash
-cd backend
-python -m venv venv
+- **SQLite:** Local prototype database for users, inspections, declarations, rule evaluations, review actions, and audit logs.
+- **JSON rules:** Configurable compliance rules are stored in `backend/rules/rules.json`.
+- **Vite proxy:** Frontend `/api` and `/uploads` requests are forwarded to the FastAPI backend on port `8000`.
 
-# On Windows:
-venv\Scripts\activate
-# On Mac/Linux:
-source venv/bin/activate
+## Solution Workflow
 
-pip install -r requirements.txt
+```mermaid
+flowchart TD
+    A[Legal Metrology officer opens SMART-LM] --> B[Login and role-based access]
+    B --> C[Upload or capture package-label image]
+    C --> D{Image readable?}
+    D -- No --> E[Request clearer image or manual inspection]
+    D -- Yes --> F[Validate file type and upload size]
+    F --> G[Assess image quality with OpenCV]
+    G --> H[Preprocess image variants]
+    H --> I[Run PaddleOCR or Tesseract fallback]
+    I --> J[Extract mandatory declarations]
+    J --> K[Run targeted MRP digit recognition when needed]
+    K --> L[Compare declarations with Legal Metrology rules]
+    L --> M{Compliance result}
+    M -- Compliant --> N[Show verified compliant result]
+    M -- Missing or invalid field --> O[Flag potential violation]
+    M -- Low OCR confidence --> P[Send to human reviewer]
+    O --> Q[Display evidence and rule reference]
+    P --> R[Reviewer confirms, rejects, or requests retake]
+    N --> S[Save inspection history]
+    Q --> S
+    R --> S
+    S --> T[Generate PDF or DOCX report]
 ```
 
-> **Note on OCR Installation (Windows):**
-> PaddleOCR (`paddlepaddle`) can sometimes have complex C++ redistributable requirements on Windows. If `pip install paddlepaddle paddleocr` fails, the application will automatically fall back to **Tesseract**.
-> To use Tesseract, install the Tesseract binary from [UB-Mannheim](https://github.com/UB-Mannheim/tesseract/wiki) and ensure it is in your system PATH, then `pip install pytesseract`.
+### Workflow Stages
 
-### 2. Frontend Setup
-
-Open a second terminal and navigate to the `frontend` directory:
-
-```bash
-cd frontend
-npm install
-```
-
----
-
-## Running the Application
-
-You must run both the backend and frontend simultaneously.
-
-### Start Backend
-In the backend terminal (with the virtual environment activated):
-
-```bash
-cd backend
-uvicorn main:app --reload --port 8000
-```
-The API will be available at `http://localhost:8000`
-API Documentation (Swagger UI) is automatically available at `http://localhost:8000/docs`
-
-### Start Frontend
-In the frontend terminal:
-
-```bash
-cd frontend
-npm run dev
-```
-The web dashboard will be available at `http://localhost:5173`
-
----
-
-## Testing & Demo Data
-
-### Seeding Demo Data
-
-To see the application in action without needing to take perfect photos immediately, you can seed the database with synthetic demo data (generated using Pillow) as well as the initial demo users (inspector, reviewer, admin):
-
-```bash
-cd backend
-# Ensure virtual environment is activated
-python demo/seed_demo.py
-```
-This will generate 5 synthetic product label images (good, blurry, missing MRP, dark, angled) in the `uploads/` directory and populate the SQLite database. It will also create three demo accounts:
-- **inspector** / `Inspector@123` (Role: INSPECTOR)
-- **reviewer** / `Reviewer@123` (Role: REVIEWER)
-- **admin** / `Admin@123` (Role: ADMIN)
-
-### Running Tests
-
-The extraction and compliance engines are fully tested using Pytest.
-
-```bash
-cd backend
-# Ensure virtual environment is activated
-pytest tests/ -v
-```
-
----
-
-## Project Structure
-
-```
-SMART-LM/
-├── backend/
-│   ├── database/       # SQLAlchemy models and SQLite connection
-│   ├── demo/           # Demo data generator script
-│   ├── models/         # Pydantic v2 schemas for API validation
-│   ├── rules/          # rules.json containing the compliance ruleset
-│   ├── services/       # Core business logic
-│   │   ├── compliance.py       # Rule evaluation engine
-│   │   ├── extraction.py       # Regex-based declaration extraction
-│   │   ├── image_processing.py # OpenCV quality assessment
-│   │   ├── ocr.py              # PaddleOCR / Tesseract wrapper
-│   │   └── reports.py          # PDF/DOCX generation
-│   ├── tests/          # Pytest suite
-│   ├── main.py         # FastAPI application entry point
-│   └── requirements.txt
-│
-├── frontend/
-│   ├── src/
-│   │   ├── api/        # Axios API client
-│   │   ├── components/ # Reusable UI components (Layout, Badges)
-│   │   ├── pages/      # Dashboard, New Inspection, Analysis Result, History
-│   │   ├── types/      # TypeScript interfaces matching backend models
-│   │   ├── App.tsx     # React Router setup
-│   │   └── index.css   # Tailwind configuration and custom CSS
-│   └── vite.config.ts  # Vite configuration (includes backend proxy)
-│
-└── data/
-    └── test_images/    # Generated demo images for testing
-```
-
----
-
-## Important Limitations & Disclaimers
-
-⚠️ **Prototype Status:** This system is a prototype built for the SIH 2026 hackathon.
-- It does **not** make official legal determinations.
-- It serves as an **inspection assistance tool** to flag potential issues.
-- All OCR findings and compliance statuses (VERIFIED COMPLIANT, POTENTIAL VIOLATION, NEEDS HUMAN REVIEW) must be physically verified by a qualified Legal Metrology Inspector.
-- If a field is marked as "Not detected", it means the OCR engine could not confidently read it. It does not automatically mean the declaration is legally missing.
-
-## Future Enhancements
-The codebase is designed to be extensible for future improvements:
-- Swapping SQLite for PostgreSQL (change one line in `database.py`).
-- Adding YOLO object detection to find the exact region of interest before OCR.
-- Implementing multilingual Indian language OCR.
+1. **Authentication:** The user logs in as an inspector, reviewer, or administrator.
+2. **Image submission:** The inspector uploads a supported package-label image.
+3. **Image preparation:** The backend checks quality and creates OCR-friendly image variants.
+4. **OCR processing:** Text and bounding boxes are detected from the package label.
+5. **Field extraction:** Deterministic patterns identify mandatory declarations; the MRP crop receives an additional digit-focused OCR pass when necessary.
+6. **Compliance evaluation:** Each extracted field is evaluated against the rules in `rules.json`.
+7. **Decision support:** The system displays status, confidence, evidence text, and rule references.
+8. **Human review:** Low-confidence or potentially non-compliant cases are reviewed by an authorized reviewer.
+9. **Storage and reporting:** Results, declarations, evaluations, and review actions are stored and can be exported as reports.
