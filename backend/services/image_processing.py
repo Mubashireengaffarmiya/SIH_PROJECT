@@ -82,11 +82,11 @@ def _resize_image(img: np.ndarray, max_dim: int) -> np.ndarray:
     return cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
 
-def _assess_quality(blur_score: float, brightness: float, contrast: float):
-    """Return (quality_string, human_message)."""
+def assess_quality(blur: float, brightness: float, contrast: float):
+    """Return (quality_string, human_message) for a measured image."""
     issues = []
 
-    if blur_score < BLUR_THRESHOLD_POOR:
+    if blur < BLUR_THRESHOLD_POOR:
         issues.append("Image is too blurry")
     if brightness < BRIGHTNESS_LOW:
         issues.append("Image is too dark")
@@ -96,13 +96,92 @@ def _assess_quality(blur_score: float, brightness: float, contrast: float):
         issues.append("Image has very low contrast")
 
     if not issues:
-        if blur_score < BLUR_THRESHOLD_ACCEPTABLE:
+        if blur < BLUR_THRESHOLD_ACCEPTABLE:
             return "ACCEPTABLE", "Image quality is acceptable but slightly blurry. Results may be less accurate."
         return "GOOD", "Image suitable for analysis."
+
+    if blur < BLUR_THRESHOLD_POOR or brightness < BRIGHTNESS_LOW:
+        return "DIFFICULT", " | ".join(issues) + ". Please retake the image for accurate results."
+    return "ACCEPTABLE", " | ".join(issues) + ". Results may be less accurate."
+
+
+def _assess_quality(blur_score: float, brightness: float, contrast: float):
+    """Backward-compatible wrapper used by the existing app. Returns POOR for difficult cases."""
+    quality, message = assess_quality(blur_score, brightness, contrast)
+    if quality == "DIFFICULT":
+        return "POOR", message
+    return quality, message
+
+
+def _ensure_3channel(image: np.ndarray) -> np.ndarray:
+    if image is None or image.size == 0:
+        return image
+    if image.ndim == 2:
+        return cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+    return image.copy()
+
+
+def _resize_for_ocr(image: np.ndarray) -> np.ndarray:
+    img = _ensure_3channel(image)
+    h, w = img.shape[:2]
+    max_dim = max(h, w)
+    if max_dim < 1200:
+        scale = 1.5
+    elif max_dim > 2400:
+        scale = 1800 / max_dim
     else:
-        if blur_score < BLUR_THRESHOLD_POOR or brightness < BRIGHTNESS_LOW:
-            return "POOR", " | ".join(issues) + ". Please retake the image for accurate results."
-        return "ACCEPTABLE", " | ".join(issues) + ". Results may be less accurate."
+        scale = 1.0
+    if scale != 1.0:
+        new_w = max(1, int(round(w * scale)))
+        new_h = max(1, int(round(h * scale)))
+        return cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
+    return img
+
+
+def _contrast_enhance(gray: np.ndarray) -> np.ndarray:
+    gray = cv2.GaussianBlur(gray, (3, 3), 0)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    return clahe.apply(gray)
+
+
+def generate_preprocessed_variants(image: np.ndarray, force_enhanced: bool = False):
+    """Create a compact set of OCR-friendly variants.
+
+    Fast first-pass: original + grayscale + contrast + threshold
+    Enhanced retry: adds sharpened and thresholded/deskew-style variants when needed.
+    """
+    if image is None or image.size == 0:
+        return []
+
+    base = _resize_for_ocr(image)
+    variants = []
+    variants.append({"name": "original", "image": base.copy()})
+
+    gray = cv2.cvtColor(base, cv2.COLOR_BGR2GRAY)
+    variants.append({"name": "grayscale", "image": cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)})
+
+    enhanced_gray = _contrast_enhance(gray)
+    variants.append({"name": "contrast", "image": cv2.cvtColor(enhanced_gray, cv2.COLOR_GRAY2BGR)})
+
+    _, threshold = cv2.threshold(enhanced_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    variants.append({"name": "threshold", "image": cv2.cvtColor(threshold, cv2.COLOR_GRAY2BGR)})
+
+    if force_enhanced:
+        kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]], dtype=np.float32)
+        sharpened = cv2.filter2D(enhanced_gray, -1, kernel)
+        variants.append({"name": "sharpened", "image": cv2.cvtColor(sharpened, cv2.COLOR_GRAY2BGR)})
+
+        adaptive = cv2.adaptiveThreshold(
+            enhanced_gray,
+            255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY,
+            31,
+            10,
+        )
+        variants.append({"name": "adaptive_threshold", "image": cv2.cvtColor(adaptive, cv2.COLOR_GRAY2BGR)})
+
+    return variants
 
 
 def enhance_for_ocr(img_bgr: np.ndarray) -> np.ndarray:

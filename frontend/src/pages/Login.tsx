@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Lock, User, Eye, EyeOff, ShieldCheck } from 'lucide-react';
+import { login as loginRequest } from '../api/client';
 
 export default function Login() {
   const [username, setUsername] = useState('');
@@ -18,23 +19,7 @@ export default function Login() {
     setLoading(true);
 
     try {
-      const formData = new URLSearchParams();
-      formData.append('username', username);
-      formData.append('password', password);
-
-      const res = await fetch('http://localhost:8000/api/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: formData.toString(),
-      });
-
-      if (!res.ok) {
-        throw new Error('Invalid credentials');
-      }
-
-      const data = await res.json();
+      const data = await loginRequest(username, password);
       login(data.access_token, data.role, data.username);
       
       if (data.role === 'INSPECTOR') navigate('/dashboard');

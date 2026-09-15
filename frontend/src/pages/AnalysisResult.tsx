@@ -14,7 +14,7 @@ import {
   Loader2,
   AlertCircle,
 } from 'lucide-react';
-import { getInspection, downloadPdfReport, downloadDocxReport } from '../api/client';
+import { getInspection, downloadPdfReport, downloadDocxReport, reviewInspection } from '../api/client';
 import { StatusBadge, ConfidenceBadge, SeverityBadge } from '../components/Badges';
 import type { AnalysisResponse, InspectionDetail } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -111,15 +111,7 @@ export default function AnalysisResult() {
     if (!id) return;
     setActionLoading(true);
     try {
-      const res = await fetch(`http://localhost:8000/api/reviewer/inspections/${id}/review`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({ action, comment: '' })
-      });
-      if (!res.ok) throw new Error('Action failed');
+      await reviewInspection(id, action);
       // Reload inspection
       const d = await getInspection(id);
       setDetail(d);
@@ -478,7 +470,7 @@ export default function AnalysisResult() {
                     </div>
                     <div className="flex gap-2">
                       <SeverityBadge severity={v.severity} />
-                      <ConfidenceBadge confidence={v.confidence} />
+                      <ConfidenceBadge confidence={v.confidence ?? 'LOW'} />
                     </div>
                   </div>
                   <p className="text-sm mb-3" style={{ color: 'rgba(226,232,240,0.65)' }}>

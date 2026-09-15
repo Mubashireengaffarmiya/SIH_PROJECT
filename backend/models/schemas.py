@@ -26,6 +26,8 @@ class OCRResult(BaseModel):
     engine: str  # "paddleocr" | "tesseract"
     success: bool
     error: Optional[str] = None
+    source_image: Optional[str] = None
+    source_image: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------

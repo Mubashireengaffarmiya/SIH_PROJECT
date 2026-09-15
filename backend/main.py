@@ -25,7 +25,7 @@ from models.schemas import (
     DashboardStats, DeclarationOut, ViolationOut,
 )
 from services.image_processing import load_and_preprocess
-from services.ocr import run_ocr
+from services.ocr import run_ocr, get_ocr_health
 from services.extraction import extract_all
 from services.compliance import run_compliance
 from services.reports import generate_pdf, generate_docx
@@ -99,12 +99,19 @@ async def on_startup():
 
 @app.get("/api/health")
 def health():
+    ocr_health = get_ocr_health()
     return {
         "status": "ok",
         "service": "SMART-LM",
         "version": "1.0.0-prototype",
         "timestamp": datetime.utcnow().isoformat(),
+        "ocr": ocr_health,
     }
+
+
+@app.get("/api/ocr/health")
+def ocr_health_endpoint():
+    return get_ocr_health()
 
 
 # ---------------------------------------------------------------------------

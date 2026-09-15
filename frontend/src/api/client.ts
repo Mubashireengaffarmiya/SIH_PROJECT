@@ -29,6 +29,22 @@ api.interceptors.request.use((config) => {
 export const checkHealth = () => api.get<{ status: string }>('/api/health');
 
 // ---------------------------------------------------------------------------
+// Authentication
+// ---------------------------------------------------------------------------
+export const login = async (username: string, password: string) => {
+  const formData = new URLSearchParams({ username, password });
+  const res = await api.post<{
+    access_token: string;
+    token_type: string;
+    role: string;
+    username: string;
+  }>('/api/auth/login', formData, {
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  });
+  return res.data;
+};
+
+// ---------------------------------------------------------------------------
 // Analysis
 // ---------------------------------------------------------------------------
 export const analyzeImage = async (file: File): Promise<AnalysisResponse> => {
@@ -94,4 +110,53 @@ export const downloadDocxReport = async (inspectionId: string): Promise<void> =>
   link.click();
   link.remove();
   window.URL.revokeObjectURL(url);
+};
+
+// ---------------------------------------------------------------------------
+// Review workflow
+// ---------------------------------------------------------------------------
+export const getReviewQueue = async (): Promise<InspectionSummary[]> => {
+  const res = await api.get<InspectionSummary[]>('/api/reviewer/queue');
+  return res.data;
+};
+
+export const reviewInspection = async (inspectionId: string, action: string, comment = '') => {
+  const res = await api.post<{ status: string; message: string }>(
+    `/api/reviewer/inspections/${inspectionId}/review`,
+    { action, comment }
+  );
+  return res.data;
+};
+
+// ---------------------------------------------------------------------------
+// Administration
+// ---------------------------------------------------------------------------
+export interface AdminUser {
+  id: number;
+  username: string;
+  full_name: string;
+  email: string;
+  role: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface AuditLog {
+  id: number;
+  username: string;
+  action: string;
+  resource_type: string | null;
+  resource_id: string | null;
+  detail: string | null;
+  timestamp: string;
+}
+
+export const listAdminUsers = async (): Promise<AdminUser[]> => {
+  const res = await api.get<AdminUser[]>('/api/admin/users');
+  return res.data;
+};
+
+export const listAuditLogs = async (): Promise<AuditLog[]> => {
+  const res = await api.get<AuditLog[]>('/api/admin/audit_logs');
+  return res.data;
 };

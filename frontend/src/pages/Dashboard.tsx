@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   AlertTriangle,
   Eye,
-  TrendingUp,
   ArrowRight,
   RefreshCw,
   Wifi,
@@ -20,21 +19,18 @@ import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis
 export default function Dashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [backendOk, setBackendOk] = useState<boolean | null>(null);
   const navigate = useNavigate();
   const { user } = useAuth();
 
   const load = async () => {
     setLoading(true);
-    setError(null);
     try {
       const data = await getDashboard();
       setStats(data);
       setBackendOk(true);
     } catch (err: unknown) {
       setBackendOk(false);
-      setError('Cannot connect to backend. Make sure the FastAPI server is running on port 8000.');
     } finally {
       setLoading(false);
     }
