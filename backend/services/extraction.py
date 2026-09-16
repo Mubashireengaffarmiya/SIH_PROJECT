@@ -130,36 +130,65 @@ def _empty_field() -> Dict[str, Any]:
     return {"value": None, "confidence": "LOW", "evidence_text": None}
 
 
+def _normalize_ocr_text(value: str) -> str:
+    text = str(value or "")
+    text = text.replace("\r", " ").replace("\n", " ")
+    text = text.replace("\t", " ")
+    replacements = {
+        "QUANT1TY": "QUANTITY",
+        "QUANT1T Y": "QUANTITY",
+        "QUANTI TY": "QUANTITY",
+        "NET WT": "NET WEIGHT",
+        "NET WT.": "NET WEIGHT",
+        "MRP :": "MRP:",
+        "MRP:": "MRP",
+        "MRP : ": "MRP:",
+        "Rs.": "RS",
+    }
+    for wrong, right in replacements.items():
+        text = text.replace(wrong, right)
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
+
+def _is_nutrition_keyword(value: str) -> bool:
+    return bool(re.search(
+        r'^(energy|protein|carbohydrate|total\s+sugars|added\s+sugars|total\s+fat|saturated|trans|sodium|fibre|calories|kcal|g|mg|ml|per\s+100g)$',
+        _normalize_ocr_text(value).lower().strip(),
+        re.I,
+    ))
+
+
+def _is_declaration_keyword(value: str) -> bool:
+    lowered = _normalize_ocr_text(value).lower()
+    return bool(re.search(
+        r'^(net\s*(qty|quantity|wt|weight|vol|volume)|mrp|max(?:imum)?\s*retail\s*price|manufactur(?:ed|er)|packed\s+by|manufactured\s*&\s*packed\s+by|mfd|best\s+before|use\s+by|country\s+of\s+origin|consumer\s+care|imported\s+by|packer|batch|no\.)$',
+        lowered,
+        re.I,
+    ))
+
+
 # ---------------------------------------------------------------------------
 # Individual Field Extractors
 # ---------------------------------------------------------------------------
 
 def extract_mrp(full_text: str, words: List[Dict[str, Any]], source_image: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Detect MRP patterns:
-      MRP ₹50 / MRP Rs.50 / MRP: 50 / Maximum Retail Price ₹50 / MRP & 250.00
-    """
-    patterns = [
-        re.compile(
-            r'(?:MRP|M\.R\.P\.?|Maximum\s+Retail\s+Price)\s*[:\-]?\s*(?:Rs\.?|₹|INR)?\s*[&]?\s*([0-9]+(?:\.[0-9]{1,2})?)',
-            re.IGNORECASE
-        ),
-        re.compile(
-            r'(?:Rs\.?|₹|INR)\s*([0-9]+(?:\.[0-9]{1,2})?)',
-            re.IGNORECASE
-        ),
-    ]
-
-    for pat in patterns:
-        m = pat.search(full_text)
-        if m:
-            nearby = [w for w in words if "mrp" in w["text"].lower() or "₹" in w["text"] or "rs" in w["text"].lower() or any(ch.isdigit() for ch in w["text"]) ]
-            avg_conf = sum(w["confidence"] for w in nearby) / len(nearby) if nearby else 0.7
-            return {
-                "value": f"₹{m.group(1)}",
-                "confidence": _combine_confidence(_confidence_from_ocr(avg_conf), True),
-                "evidence_text": m.group(0),
-            }
+    """Extract MRP only when it is explicitly associated with an MRP keyword and nearby value."""
+    normalized_text = _normalize_ocr_text(full_text)
+    pattern = re.compile(
+        r'(?:MRP|M\.R\.P\.?|Maximum\s+Retail\s+Price)\s*[:\-]?\s*(?:Rs\.?|₹|INR)?\s*[&]?\s*([0-9]+(?:\.[0-9]{1,2})?)',
+        re.IGNORECASE,
+    )
+    m = pattern.search(normalized_text)
+    if m:
+        val = f"₹{m.group(1)}"
+        nearby = [w for w in words if "mrp" in _normalize_ocr_text(w["text"]).lower() or "₹" in w["text"] or "rs" in _normalize_ocr_text(w["text"]).lower() or any(ch.isdigit() for ch in w["text"])]
+        avg_conf = sum(w["confidence"] for w in nearby) / len(nearby) if nearby else 0.8
+        return {
+            "value": val,
+            "confidence": _combine_confidence(_confidence_from_ocr(avg_conf), True),
+            "evidence_text": m.group(0),
+        }
 
     if source_image:
         try:
@@ -180,240 +209,359 @@ def extract_mrp(full_text: str, words: List[Dict[str, Any]], source_image: Optio
     return _empty_field()
 
 
+_QUANTITY_UNIT_PATTERN = r'(?:mg|g|gm|gram|grams|kg|ml|l|litre|liter|pieces?|pcs|units?)'
+_QUANTITY_NUMBER_PATTERN = r'(?:\d+(?:[\.,]\d+)?)'
+_QUANTITY_VALUE_PATTERN = re.compile(
+    rf'(?P<number>{_QUANTITY_NUMBER_PATTERN})\s*(?P<unit>{_QUANTITY_UNIT_PATTERN})',
+    re.IGNORECASE,
+)
+
+
+def _normalize_quantity_token(value: str) -> str:
+    """Correct OCR errors only while parsing a quantity candidate."""
+    text = _normalize_ocr_text(value).strip(' ,:;()[]{}')
+    text = re.sub(r'(?<=\d)[Oo](?=\d)', '0', text, flags=re.IGNORECASE)
+    text = re.sub(r'^[Oo](?=[.,]\d)', '0', text, flags=re.IGNORECASE)
+    text = re.sub(r'(?<=\d)[Oo](?=\s*[a-zA-Z])', '0', text, flags=re.IGNORECASE)
+    text = re.sub(r'(?<=\d),(?=\d)', '.', text)
+    text = re.sub(r'(?P<number>\d{2,4})9(?=$|\s*[a-zA-Z])', r'\g<number> g', text)
+    return re.sub(r'\s+', ' ', text).strip()
+
+
+def _format_quantity(number: str, unit: str) -> str:
+    return f'{number.replace(",", ".")} {unit.lower()}'
+
+
+def _quantity_from_tokens(tokens: List[str]) -> Optional[Tuple[str, str]]:
+    """Return (formatted value, evidence) from one or two nearby OCR tokens."""
+    normalized = [_normalize_quantity_token(token) for token in tokens if token]
+    joined = _normalize_quantity_token(' '.join(normalized))
+    match = _QUANTITY_VALUE_PATTERN.search(joined)
+    if not match:
+        return None
+    value = _format_quantity(match.group('number'), match.group('unit'))
+    return value, joined
+
+
+def _bbox(word: Dict[str, Any]) -> Optional[Tuple[float, float, float, float]]:
+    values = word.get('bbox') or []
+    if len(values) < 4:
+        return None
+    return tuple(float(value) for value in values[:4])
+
+
+def _quantity_keyword_span(words: List[Dict[str, Any]]) -> Optional[Tuple[int, int, str]]:
+    normalized = [_normalize_ocr_text(word.get('text', '')).strip(' .,:;').lower() for word in words]
+    aliases = {
+        'qty': 'QTY', 'quantity': 'QUANTITY', 'weight': 'WEIGHT',
+        'wt': 'WEIGHT', 'volume': 'VOLUME', 'vol': 'VOLUME',
+    }
+    for index, token in enumerate(normalized):
+        token = token.replace('1', 'i')
+        if token == 'net' and index + 1 < len(normalized):
+            next_token = normalized[index + 1].replace('1', 'i')
+            if next_token in aliases:
+                return index, index + 1, f'NET {aliases[next_token]}'
+        if token in {'quantity', 'qty', 'weight', 'wt', 'volume', 'vol'}:
+            return index, index, aliases.get(token, token.upper())
+    return None
+
+
 def extract_net_quantity(full_text: str, words: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """
-    Detect net quantity:
-      Net Qty 100g / Net Quantity: 500 ml / 1 L / 250 grams / 6 Pieces
-    """
-    strong = re.compile(
-        r'(?:Net\s+(?:Qty|Quantity|Wt\.?|Weight|Vol\.?|Volume|Content))\s*[:\-]?\s*'
-        r'([0-9]+(?:\.[0-9]+)?\s*(?:kg|g|gm|grams?|ml|mL|litre|liter|L|pieces?|pcs|units?|tabs?|tablets?))',
-        re.IGNORECASE
-    )
-    m = strong.search(full_text)
-    if m:
-        qty_words = [w for w in words if re.search(r'net', w["text"], re.I)]
-        avg_conf = sum(w["confidence"] for w in qty_words) / len(qty_words) if qty_words else 0.7
-        return {
-            "value": m.group(1).strip(),
-            "confidence": _combine_confidence(_confidence_from_ocr(avg_conf), True),
-            "evidence_text": m.group(0),
-        }
+    """Extract net quantity from an explicitly labelled, spatially nearby value."""
+    keyword_span = _quantity_keyword_span(words)
+    if keyword_span:
+        start, end, label = keyword_span
+        label_box = _bbox(words[start])
+        end_box = _bbox(words[end])
+        if label_box and end_box:
+            label_box = (
+                min(label_box[0], end_box[0]), min(label_box[1], end_box[1]),
+                max(label_box[2], end_box[2]), max(label_box[3], end_box[3]),
+            )
+        candidates = []
+        stop_words = {'mrp', 'manufactured', 'packed', 'mfd', 'best', 'before', 'use', 'country', 'consumer', 'batch'}
+        for index in range(end + 1, min(len(words), end + 10)):
+            token = _normalize_ocr_text(words[index].get('text', ''))
+            if not token:
+                continue
+            if token.lower().strip(' .,:;') in stop_words:
+                break
+            for span in (1, 2):
+                if index + span > len(words):
+                    continue
+                token_words = words[index:index + span]
+                parsed = _quantity_from_tokens([word.get('text', '') for word in token_words])
+                if not parsed:
+                    continue
+                candidate_box = _bbox(token_words[0])
+                if len(token_words) == 2 and _bbox(token_words[1]):
+                    second_box = _bbox(token_words[1])
+                    candidate_box = (
+                        min(candidate_box[0], second_box[0]), min(candidate_box[1], second_box[1]),
+                        max(candidate_box[2], second_box[2]), max(candidate_box[3], second_box[3]),
+                    ) if candidate_box else second_box
+                if not label_box or not candidate_box:
+                    score = 50.0
+                else:
+                    same_line = abs(((label_box[1] + label_box[3]) / 2) - ((candidate_box[1] + candidate_box[3]) / 2)) <= max(label_box[3] - label_box[1], 24) * 1.8
+                    horizontal_gap = max(0.0, candidate_box[0] - label_box[2])
+                    vertical_gap = max(0.0, candidate_box[1] - label_box[3])
+                    below_label = vertical_gap <= 180 and candidate_box[2] >= label_box[0] and candidate_box[0] <= label_box[2]
+                    nearby = same_line or below_label
+                    if not nearby:
+                        continue
+                    score = 100.0 if same_line else 85.0
+                    score -= min(horizontal_gap / 100.0, 20.0)
+                    score -= min(vertical_gap / 100.0, 20.0)
+                confidence = sum(float(word.get('confidence', 0.0)) for word in token_words) / len(token_words)
+                candidates.append((score, confidence, parsed, token_words))
+                break
 
-    # Standalone quantity (weaker)
-    weak = re.compile(
-        r'\b([0-9]+(?:\.[0-9]+)?\s*(?:kg|g|gm|grams?|ml|mL|litre|liter|[Ll]b?|pieces?|pcs))\b',
-        re.IGNORECASE
-    )
-    m = weak.search(full_text)
-    if m:
-        return {
-            "value": m.group(1).strip(),
-            "confidence": "LOW",
-            "evidence_text": m.group(0),
-        }
+        if candidates:
+            score, ocr_conf, (value, evidence), selected_words = max(candidates, key=lambda item: (item[0], item[1]))
+            logger.info('Net quantity: label=%s value=%s score=%.1f bbox=%s', label, value, score, _bbox(selected_words[0]))
+            confidence = 'HIGH' if score >= 80 and ocr_conf >= 0.75 else 'MEDIUM'
+            return {'value': value, 'confidence': confidence, 'evidence_text': f'{label} {evidence}'}
+        logger.info('Net quantity label=%s found but no nearby valid candidate', label)
+        return _empty_field()
 
+    weak = _QUANTITY_VALUE_PATTERN.search(_normalize_ocr_text(full_text))
+    if weak:
+        value = _format_quantity(weak.group('number'), weak.group('unit'))
+        return {'value': value, 'confidence': 'LOW', 'evidence_text': weak.group(0)}
     return _empty_field()
 
 
 def extract_manufacturer(full_text: str, words: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """
-    Detect manufacturer / packer / importer with address fragment.
-    """
-    patterns = [
-        re.compile(
-            r'(?:Manufactured\s+(?:and\s+)?(?:Packed\s+)?by|Mfd\.\s+by|Mfr\.\s+by|'
-            r'Packed\s+by|Packer\s*:|Imported\s+by|Distributed\s+by|Marketed\s+by)[:\s]+([^\n\.]{10,220})',
-            re.IGNORECASE
-        ),
-        re.compile(
-            r'(?:Manufacturer|Packer|Importer)\s*[:\-]\s*([^\n\.]{10,220})',
-            re.IGNORECASE
-        ),
-    ]
-    for pat in patterns:
-        m = pat.search(full_text)
-        if m:
-            manufacturer_text = m.group(1).strip()
-            if re.search(r'Plot\s+No\.|Industrial\s+Area|Pune|India|No\.', manufacturer_text, re.I):
-                manufacturer_text = manufacturer_text[:220]
-            mfr_words = [w for w in words if re.search(r'manufactur|packed|importer|packer|plot|industrial|pune', w["text"], re.I)]
-            avg_conf = sum(w["confidence"] for w in mfr_words) / len(mfr_words) if mfr_words else 0.7
-            return {
-                "value": manufacturer_text[:220],
-                "confidence": _combine_confidence(_confidence_from_ocr(avg_conf), True),
-                "evidence_text": m.group(0)[:250],
-            }
+    """Collect the text immediately after a manufacturer/packer declaration keyword until the next declaration block."""
+    normalized_text = _normalize_ocr_text(full_text)
+    keyword_re = re.compile(r'(?:MANUFACTURED\s*(?:&\s*PACKED)?\s*BY|PACKED\s*BY|MANUFACTURED\s*BY|PACKER|MANUFACTURER|IMPORTED\s*BY|DISTRIBUTED\s*BY|MARKETED\s*BY)', re.IGNORECASE)
+    match = keyword_re.search(normalized_text)
+    if match:
+        tail = normalized_text[match.end():]
+        cutoff = re.search(r'(?i)(?:\bNET\s+QTY\b|\bNET\s+QUANTITY\b|\bMRP\b|\bBEST\s+BEFORE\b|\bUSE\s+BY\b|\bMFD\b|\bCOUNTRY\s+OF\s+ORIGIN\b|\bCONSUMER\s+CARE\b|\bFOR\s+CONSUMER\s+COMPLAINTS\b|\bCALL\b)', tail)
+        if cutoff:
+            tail = tail[:cutoff.start()]
+        tail = re.sub(r'\b(?:ENERGY|PROTEIN|CARBOHYDRATE|TOTAL|FAT|SODIUM|SUGARS|ADDED|FLAVOUR|FLAVOR|INGREDIENTS|POTATO|CHIPS|OIL|SALT|SERVE|VALUES|APPROX|INFORMATION|PER|WATER)\b.*', '', tail, flags=re.IGNORECASE)
+        tail = re.sub(r'\b\d+(?:\.\d+)?\b', ' ', tail)
+        value = re.sub(r'\s+', ' ', tail).strip(' .,:;')
+        # Keep only company-like text; avoid nutrition names and raw addresses without a legal entity name
+        if len(value) >= 10 and any(ch.isalpha() for ch in value):
+            return {'value': value[:220], 'confidence': 'HIGH', 'evidence_text': tail[:250]}
+
+    for i, word in enumerate(words):
+        text = _normalize_ocr_text(word.get('text', ''))
+        if re.search(r'^(MANUFACTURED|PACKED|PACKER|MANUFACTURER|IMPORTED|DISTRIBUTED|MARKETED)$', text, re.I):
+            group = []
+            for j in range(i + 1, min(len(words), i + 18)):
+                next_text = _normalize_ocr_text(words[j].get('text', ''))
+                if not next_text:
+                    continue
+                if re.search(r'^(?:NET|QTY|QUANTITY|MRP|BEST|BEFORE|USE|BY|MFD|COUNTRY|CONSUMER|CALL|EMAIL|WWW|FOR)$', next_text, re.I):
+                    break
+                if re.fullmatch(r'\d+(?:\.\d+)?', next_text):
+                    continue
+                if re.search(r'^(?:ENERGY|PROTEIN|CARBOHYDRATE|TOTAL|FAT|SODIUM|SUGARS|ADDED|FLAVOUR|FLAVOR|INGREDIENTS|POTATO|CHIPS|OIL|SALT|VALUES|APPROX|INFORMATION|PER|SERVE)$', next_text, re.I):
+                    continue
+                if re.search(r'^(?:BY|&|,|\.|:)$', next_text, re.I):
+                    continue
+                group.append(next_text)
+            value = ' '.join(group).strip(' ,.;:')
+            if len(value) >= 10 and any(ch.isalpha() for ch in value):
+                return {'value': value[:220], 'confidence': 'MEDIUM', 'evidence_text': value}
+
     return _empty_field()
 
 
 def extract_manufacturing_date(full_text: str, words: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """
-    Detect manufacturing / packing date.
-    Patterns: MFD, Mfg Date, Manufactured on, Packed on
-    Dates: MM/YYYY, MM-YYYY, Month YYYY, DD/MM/YYYY
-    """
-    # keyword + date
+    """Detect manufacturing / packing date with explicit date keyword context."""
     strong = re.compile(
         r'(?:MFD|Mfg\.?\s*Date?|Manufactured\s+(?:on|date)?|Packed\s+on|Mfd\.?)\s*[:\-]?\s*'
         r'((?:\d{1,2}[\/\-]\d{4})|(?:\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})|'
         r'(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s*\d{4})',
-        re.IGNORECASE
+        re.IGNORECASE,
     )
-    m = strong.search(full_text)
+    m = strong.search(_normalize_ocr_text(full_text))
     if m:
-        date_words = [w for w in words if re.search(r'mfd|mfg|manufactur|packed', w["text"], re.I)]
-        avg_conf = sum(w["confidence"] for w in date_words) / len(date_words) if date_words else 0.7
+        date_words = [w for w in words if re.search(r'mfd|mfg|manufactur|packed', _normalize_ocr_text(w['text']), re.I)]
+        avg_conf = sum(w['confidence'] for w in date_words) / len(date_words) if date_words else 0.7
         return {
-            "value": m.group(1).strip(),
-            "confidence": _combine_confidence(_confidence_from_ocr(avg_conf), True),
-            "evidence_text": m.group(0),
+            'value': m.group(1).strip(),
+            'confidence': _combine_confidence(_confidence_from_ocr(avg_conf), True),
+            'evidence_text': m.group(0),
         }
     return _empty_field()
 
 
 def extract_consumer_care(full_text: str, words: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """
-    Detect consumer care details: phone, email, or keyword lines.
-    """
-    # Phone number detection (Indian: 10 digits, or with +91, or toll-free 1800-)
+    """Detect consumer care details: phone, email, or keyword lines."""
     phone_pat = re.compile(
-        r'(?:Consumer\s+Care|Customer\s+Care|Helpline|Care\s+No\.?|Toll\s+Free)?\s*[:\-]?\s*'
-        r'(\+?91[-\s]?\d{10}|1800[-\s]?\d{3,4}[-\s]?\d{4,6}|\d{10,11})',
-        re.IGNORECASE
+        r'(?:Consumer\s+Care|Customer\s+Care|Helpline|Care\s+No\.?|Toll\s+Free)?\s*[:\-]?\s*(\+?91[-\s]?\d{10}|1800[-\s]?\d{3,4}[-\s]?\d{4,6}|\d{10,11})',
+        re.IGNORECASE,
     )
-    m = phone_pat.search(full_text)
+    m = phone_pat.search(_normalize_ocr_text(full_text))
     if m:
-        care_words = [w for w in words if re.search(r'consumer|customer|care|helpline|toll', w["text"], re.I)]
-        avg_conf = sum(w["confidence"] for w in care_words) / len(care_words) if care_words else 0.7
-        return {
-            "value": m.group(0).strip(),
-            "confidence": _combine_confidence(_confidence_from_ocr(avg_conf), True),
-            "evidence_text": m.group(0),
-        }
+        care_words = [w for w in words if re.search(r'consumer|customer|care|helpline|toll', _normalize_ocr_text(w['text']), re.I)]
+        avg_conf = sum(w['confidence'] for w in care_words) / len(care_words) if care_words else 0.7
+        return {'value': m.group(0).strip(), 'confidence': _combine_confidence(_confidence_from_ocr(avg_conf), True), 'evidence_text': m.group(0)}
 
-    # Email detection
     email_pat = re.compile(r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}', re.IGNORECASE)
-    m = email_pat.search(full_text)
+    m = email_pat.search(_normalize_ocr_text(full_text))
     if m:
-        return {
-            "value": m.group(0).strip(),
-            "confidence": "MEDIUM",
-            "evidence_text": m.group(0),
-        }
+        return {'value': m.group(0).strip(), 'confidence': 'MEDIUM', 'evidence_text': m.group(0)}
 
-    # Keyword line only
-    keyword_pat = re.compile(
-        r'(?:Consumer\s+Care|Customer\s+Care|Helpline|Care\s+Line)[^\n]{0,80}',
-        re.IGNORECASE
-    )
-    m = keyword_pat.search(full_text)
+    keyword_pat = re.compile(r'(?:Consumer\s+Care|Customer\s+Care|Helpline|Care\s+Line)[^\n]{0,80}', re.IGNORECASE)
+    m = keyword_pat.search(_normalize_ocr_text(full_text))
     if m:
-        return {
-            "value": m.group(0).strip()[:120],
-            "confidence": "LOW",
-            "evidence_text": m.group(0),
-        }
+        return {'value': m.group(0).strip()[:120], 'confidence': 'LOW', 'evidence_text': m.group(0)}
 
     return _empty_field()
 
 
 def extract_country_of_origin(full_text: str, words: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """
-    Detect country of origin.
-    """
+    """Detect country of origin."""
     strong = re.compile(
-        r'(?:Country\s+of\s+Origin|Country\s*:|Origin\s*:)\s*([A-Za-z ]+?)(?:[,\n\.]|$)',
-        re.IGNORECASE
+        r'(?:Country\s+of\s+Origin|Country\s*:|Origin\s*:)\s*'
+        r'([A-Za-z][A-Za-z\s\-]*?)(?=\s*(?:[,.]|$|(?:Consumer|Customer)\s+Care|Helpline|Toll\s+Free))',
+        re.IGNORECASE,
     )
-    m = strong.search(full_text)
+    m = strong.search(_normalize_ocr_text(full_text))
     if m:
-        coo_words = [w for w in words if re.search(r'country|origin', w["text"], re.I)]
-        avg_conf = sum(w["confidence"] for w in coo_words) / len(coo_words) if coo_words else 0.7
-        return {
-            "value": m.group(1).strip(),
-            "confidence": _combine_confidence(_confidence_from_ocr(avg_conf), True),
-            "evidence_text": m.group(0),
-        }
+        coo_words = [w for w in words if re.search(r'country|origin', _normalize_ocr_text(w['text']), re.I)]
+        avg_conf = sum(w['confidence'] for w in coo_words) / len(coo_words) if coo_words else 0.7
+        value = m.group(1).strip()
+        if value:
+            return {'value': value, 'confidence': _combine_confidence(_confidence_from_ocr(avg_conf), True), 'evidence_text': m.group(0)}
 
-    # "Made in X" pattern
     made_in = re.compile(r'Made\s+in\s+([A-Za-z ]+?)(?:[,\n\.]|$)', re.IGNORECASE)
-    m = made_in.search(full_text)
+    m = made_in.search(_normalize_ocr_text(full_text))
     if m:
-        return {
-            "value": m.group(1).strip(),
-            "confidence": "MEDIUM",
-            "evidence_text": m.group(0),
-        }
+        return {'value': m.group(1).strip(), 'confidence': 'MEDIUM', 'evidence_text': m.group(0)}
 
     return _empty_field()
 
 
 def extract_best_before(full_text: str, words: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """
-    Detect best before / expiry / use by date.
-    """
+    """Detect best before / expiry / use by date with keyword context."""
     strong = re.compile(
         r'(?:Best\s+Before|Best\s+By|Use\s+By|Use\s+Before|Expiry|Exp\.?\s*Date?|BB)\s*[:\-]?\s*'
         r'((?:\d{1,2}[\/\-]\d{1,4})|(?:\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})|'
         r'(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s*\d{4}|'
         r'(?:\d+\s+(?:months?|days?|years?)\s+from\s+(?:mfd|mfg|mfg\s+date|manufacture|packing|packing\s+date)))',
-        re.IGNORECASE
+        re.IGNORECASE,
     )
-    m = strong.search(full_text)
+    m = strong.search(_normalize_ocr_text(full_text))
     if m:
-        bb_words = [w for w in words if re.search(r'best|before|expiry|exp\.?|use by', w["text"], re.I)]
-        avg_conf = sum(w["confidence"] for w in bb_words) / len(bb_words) if bb_words else 0.7
-        return {
-            "value": m.group(1).strip(),
-            "confidence": _combine_confidence(_confidence_from_ocr(avg_conf), True),
-            "evidence_text": m.group(0),
-        }
+        bb_words = [w for w in words if re.search(r'best|before|expiry|exp\.?|use by', _normalize_ocr_text(w['text']), re.I)]
+        avg_conf = sum(w['confidence'] for w in bb_words) / len(bb_words) if bb_words else 0.7
+        return {'value': m.group(1).strip(), 'confidence': _combine_confidence(_confidence_from_ocr(avg_conf), True), 'evidence_text': m.group(0)}
     return _empty_field()
 
 
 def extract_unit_sale_price(full_text: str, words: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """
-    Detect unit sale price (per kg, per litre).
-    """
-    pat = re.compile(
-        r'(?:Unit\s+(?:Sale\s+)?Price|Price\s+per\s+(?:kg|litre|liter|100g|unit))\s*[:\-]?\s*'
-        r'(?:Rs\.?|₹|INR)?\s*([0-9]+(?:\.[0-9]{1,2})?)',
-        re.IGNORECASE
-    )
-    m = pat.search(full_text)
+    """Detect unit sale price (per kg, per litre)."""
+    pat = re.compile(r'(?:Unit\s+(?:Sale\s+)?Price|Price\s+per\s+(?:kg|litre|liter|100g|unit))\s*[:\-]?\s*(?:Rs\.?|₹|INR)?\s*([0-9]+(?:\.[0-9]{1,2})?)', re.IGNORECASE)
+    m = pat.search(_normalize_ocr_text(full_text))
     if m:
-        return {
-            "value": f"₹{m.group(1)}",
-            "confidence": "MEDIUM",
-            "evidence_text": m.group(0),
-        }
+        return {'value': f'₹{m.group(1)}', 'confidence': 'MEDIUM', 'evidence_text': m.group(0)}
     return _empty_field()
 
 
 def extract_product_name(full_text: str, words: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Prefer the product title before the Net Qty or MRP label, rather than a single word."""
-    label_match = re.search(r'(.+?)(?=\s*(?:Net\s+Qty|Net\s+Quantity|MRP|Maximum\s+Retail\s+Price))', full_text, re.IGNORECASE | re.DOTALL)
-    if label_match:
-        candidate = re.sub(r'\s+', ' ', label_match.group(1)).strip(' .,:;-|/')
-        if len(candidate) >= 3 and not re.fullmatch(r'^[\d\s\W]+$', candidate):
-            top_words = [w for w in words if w["text"].lower() in candidate.lower().split()]
-            avg_conf = sum(w["confidence"] for w in top_words) / len(top_words) if top_words else 0.7
-            return {
-                "value": candidate[:100],
-                "confidence": _confidence_from_ocr(avg_conf),
-                "evidence_text": candidate,
-            }
+    """Prefer a title-like phrase near the package name, not a nutrition table block."""
+    normalized_text = _normalize_ocr_text(full_text)
+    stop_keywords = [
+        'NET', 'QTY', 'QUANTITY', 'WT', 'WEIGHT', 'MRP', 'MAXIMUM', 'RETAIL', 'PRICE',
+        'MANUFACTURED', 'PACKED', 'MFD', 'BEST', 'BEFORE', 'USE', 'BY', 'COUNTRY', 'ORIGIN',
+        'CONSUMER', 'CARE', 'CALL', 'EMAIL', 'WWW', 'SERVE', 'BATCH', 'LOT', 'PLOT'
+    ]
 
-    lines = [l.strip() for l in full_text.split('\n') if l.strip()]
-    for line in lines:
-        if len(line) >= 3 and not re.match(r'^[\d\s\W]+$', line):
-            if not re.search(r'MRP|Rs\.|₹|MFD|Best\s+Before|Net\s+Qty|Manufactured|Country\s+of\s+Origin|Consumer\s+Care', line, re.I):
-                return {
-                    "value": line[:100],
-                    "confidence": "LOW",
-                    "evidence_text": line,
-                }
+    # Repeated adjacent words are a strong, product-agnostic title signal on
+    # package fronts that show the same name in more than one location.
+    repeated_pairs = []
+    for i in range(len(words) - 1):
+        first = _normalize_ocr_text(words[i].get('text', '')).strip(' .,:;')
+        second = _normalize_ocr_text(words[i + 1].get('text', '')).strip(' .,:;')
+        if not (re.fullmatch(r"[A-Za-z][A-Za-z'\-]*", first) and re.fullmatch(r"[A-Za-z][A-Za-z'\-]*", second)):
+            continue
+        first_y = (words[i].get('bbox') or [0, 0, 0, 0])[1]
+        second_y = (words[i + 1].get('bbox') or [0, 0, 0, 0])[1]
+        if abs(float(first_y) - float(second_y)) > 45:
+            continue
+        pair = (first.lower(), second.lower())
+        if any(
+            pair == (
+                _normalize_ocr_text(words[j].get('text', '')).strip(' .,:;').lower(),
+                _normalize_ocr_text(words[j + 1].get('text', '')).strip(' .,:;').lower(),
+            )
+            for j in range(i + 2, len(words) - 1)
+        ):
+            repeated_pairs.append((i, f'{first} {second}'))
+    if repeated_pairs:
+        value = repeated_pairs[0][1]
+        return {'value': value, 'confidence': 'HIGH', 'evidence_text': value}
+
+    stop_index = None
+    for idx, word in enumerate(words):
+        text = _normalize_ocr_text(word.get('text', ''))
+        if any(re.fullmatch(re.escape(keyword), text, re.I) for keyword in stop_keywords):
+            stop_index = idx
+            break
+        if re.fullmatch(r'(?:NUTRI\w*|ENERGY|INGREDIENTS|CONTAINS|MANUFACTURED)', text, re.I):
+            stop_index = idx
+            break
+
+    candidate_words = []
+    for word in words[:stop_index] if stop_index is not None else words:
+        text = _normalize_ocr_text(word.get('text', ''))
+        if not text:
+            continue
+        if re.fullmatch(r'\d+(?:\.\d+)?', text):
+            continue
+        if re.search(r'^(?:ENERGY|PROTEIN|CARBOHYDRATE|TOTAL|FAT|SODIUM|ADDED|SUGARS|VALUES|APPROX|INFORMATION|PER|SERVE|INGREDIENTS|FLAVOUR|FLAVOR|OIL|SALT|POTATO|CHIPS|KCAL|G|MG|ML|CALORIES)$', text, re.I):
+            continue
+        if re.search(r'^(?:INFO|INFORMATION|NUTRITION|VALUES|APPROX)$', text, re.I):
+            continue
+        if re.search(r'^[^A-Za-z\'\-]+$', text):
+            continue
+        candidate_words.append(text)
+
+    # Prefer a later, title-like phrase near the product name rather than the nutrition block.
+    phrase = []
+    for token in reversed(candidate_words):
+        if re.search(r'^(?:BY|THE|AND|OF|FOR|AT|IN|ON|&|\.|:|,|\(|\))$', token, re.I):
+            continue
+        if re.search(r'^(?:ENERGY|PROTEIN|CARBOHYDRATE|TOTAL|FAT|SODIUM|ADDED|SUGARS|VALUES|APPROX|INFORMATION|PER|SERVE|INGREDIENTS|FLAVOUR|FLAVOR|OIL|SALT|POTATO|CHIPS|KCAL|G|MG|ML)$', token, re.I):
+            continue
+        phrase.append(token)
+        if len(phrase) >= 6:
+            break
+    phrase = list(reversed(phrase))
+    cleaned = re.sub(r'\s+', ' ', ' '.join(phrase)).strip(' .,:;')
+    if len(cleaned.split()) >= 2 and re.search(r'[A-Za-z]', cleaned):
+        return {'value': cleaned[:100], 'confidence': 'HIGH', 'evidence_text': cleaned}
+
+    # Fallback: allow a short product title if it appears after nutrition and before declaration keywords.
+    for idx, word in enumerate(words):
+        text = _normalize_ocr_text(word.get('text', ''))
+        if re.search(r'^(?:LAYS|LAY\'S|CLASSIC|SALTED|SUNRISE|ATTA|BASMATI|HONEY|CHIPS|POTATO|FRESH|GOLDEN|NATURE|ORANGE|COFFEE|TEA|RICE|OATS|BISCUITS|SOAP|SHAMPOO|DETERGENT|COSMETIC|BISCUIT)$', text, re.I):
+            joined = []
+            for j in range(idx, min(len(words), idx + 4)):
+                token = _normalize_ocr_text(words[j].get('text', ''))
+                if not token:
+                    continue
+                if re.search(r'^(?:NET|QTY|QUANTITY|MRP|BEST|BEFORE|USE|BY|MFD|COUNTRY|ORIGIN|CONSUMER|CARE|CALL|EMAIL|WWW|BATCH|LOT|PLOT)$', token, re.I):
+                    break
+                if re.fullmatch(r'\d+(?:\.\d+)?', token):
+                    break
+                if re.search(r'^(?:ENERGY|PROTEIN|CARBOHYDRATE|TOTAL|FAT|SODIUM|ADDED|SUGARS|VALUES|APPROX|INFORMATION|PER|SERVE|INGREDIENTS|FLAVOUR|FLAVOR|OIL|SALT|POTATO|CHIPS)$', token, re.I):
+                    break
+                joined.append(token)
+            joined_text = re.sub(r'\s+', ' ', ' '.join(joined)).strip(' .,:;')
+            if len(joined_text.split()) >= 2:
+                return {'value': joined_text[:100], 'confidence': 'MEDIUM', 'evidence_text': joined_text}
+
     return _empty_field()
 
 

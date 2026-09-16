@@ -9,6 +9,7 @@ import os
 import uuid
 import shutil
 import logging
+import asyncio
 from datetime import datetime
 from typing import List, Optional
 
@@ -27,7 +28,9 @@ from models.schemas import (
 from services.image_processing import load_and_preprocess
 from services.ocr import run_ocr, get_ocr_health
 from services.extraction import extract_all
+from services.hybrid_extraction import build_hybrid_extraction
 from services.compliance import run_compliance
+from ocr.vlm_engine import PaddleOCRVLEngine
 from services.reports import generate_pdf, generate_docx
 from routers import auth, admin, reviewer
 
@@ -39,6 +42,7 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
 )
 logger = logging.getLogger("smart_lm")
+_vlm_engine = PaddleOCRVLEngine()
 
 # ---------------------------------------------------------------------------
 # Directories
@@ -119,6 +123,11 @@ def ocr_health_endpoint():
     return get_ocr_health()
 
 
+@app.get("/api/vlm/health")
+def vlm_health_endpoint():
+    return _vlm_engine.availability()
+
+
 # ---------------------------------------------------------------------------
 # Analysis endpoint (main pipeline)
 # ---------------------------------------------------------------------------
@@ -169,9 +178,23 @@ async def analyze_image(
     logger.info("[%s] Running OCR (quality=%s)...", inspection_id, image_quality)
     ocr_result = run_ocr(image_path)
 
+    logger.info("[%s] Running optional PaddleOCR-VL extraction...", inspection_id)
+    if os.getenv("SMARTLM_ENABLE_VLM", "1").lower() in {"0", "false", "no", "off"}:
+        vlm_result = {
+            "status": "disabled",
+            "engine": "paddleocr-vl",
+            "pipeline_version": _vlm_engine.pipeline_version,
+            "fields": {},
+            "source_image": image_path,
+            "error": "VLM disabled by SMARTLM_ENABLE_VLM.",
+        }
+    else:
+        vlm_result = await asyncio.to_thread(_vlm_engine.run, image_path)
+
     # --- Extraction ---
     logger.info("[%s] Extracting declarations...", inspection_id)
     extraction = extract_all(ocr_result)
+    hybrid_extraction = build_hybrid_extraction(extraction, vlm_result)
 
     # --- Compliance ---
     logger.info("[%s] Running compliance checks...", inspection_id)
@@ -246,6 +269,7 @@ async def analyze_image(
     from models.schemas import (
         ImageQualityResult, OCRResult, OCRWord, ExtractionResult,
         ExtractedField, ComplianceResult, RuleEvaluation, AnalysisResponse,
+        VLMResult, VLMField, HybridField,
     )
 
     def _to_extracted_field(d: dict) -> ExtractedField:
@@ -284,6 +308,15 @@ async def analyze_image(
             best_before=_to_extracted_field(extraction.get("best_before", {})),
             unit_sale_price=_to_extracted_field(extraction.get("unit_sale_price", {})),
         ),
+        vlm=VLMResult(
+            status=vlm_result.get("status", "failed"),
+            engine=vlm_result.get("engine", "paddleocr-vl"),
+            pipeline_version=vlm_result.get("pipeline_version"),
+            fields={key: VLMField(**value) for key, value in vlm_result.get("fields", {}).items()},
+            source_image=vlm_result.get("source_image"),
+            error=vlm_result.get("error"),
+        ),
+        hybrid_extraction={key: HybridField(**value) for key, value in hybrid_extraction.items()},
         compliance=ComplianceResult(
             overall_status=compliance["overall_status"],
             overall_confidence=compliance["overall_confidence"],

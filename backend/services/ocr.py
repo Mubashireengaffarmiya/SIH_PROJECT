@@ -12,6 +12,7 @@ If both engines fail, returns a safe error dict — does NOT raise.
 
 import logging
 import os
+import re
 import shutil
 import subprocess
 from typing import List, Dict, Any, Optional
@@ -280,6 +281,33 @@ def _parse_tesseract_words(data: Dict[str, Any]) -> List[Dict[str, Any]]:
     return words
 
 
+def _net_quantity_signal(words: List[Dict[str, Any]]) -> int:
+    """Score OCR variants for explicit, locally supported net quantities."""
+    label_pattern = re.compile(r'^(?:net|qty|quantity|wt|weight|vol|volume|quant1ty|we1ght)$', re.I)
+    value_pattern = re.compile(r'^\d+(?:[.,]\d+)?\s*(?:mg|g|gm|gram|grams|kg|ml|l|litre|liter|pieces?|pcs|units?)$', re.I)
+    number_pattern = re.compile(r'^\d+(?:[.,]\d+)?$', re.I)
+    unit_pattern = re.compile(r'^(?:mg|g|gm|gram|grams|kg|ml|l|litre|liter|pieces?|pcs|units?)$', re.I)
+    normalized = [str(word.get('text', '')).strip() for word in words]
+    best = 0
+    for index, token in enumerate(normalized):
+        if not label_pattern.fullmatch(token):
+            continue
+        label_end = index
+        if token.lower() == 'net' and index + 1 < len(normalized):
+            label_end = index + 1
+        score = 2
+        for candidate_index in range(label_end + 1, min(len(normalized), label_end + 7)):
+            candidate = normalized[candidate_index]
+            if value_pattern.fullmatch(candidate):
+                score = max(score, 5)
+                break
+            if number_pattern.fullmatch(candidate) and candidate_index + 1 < len(normalized) and unit_pattern.fullmatch(normalized[candidate_index + 1]):
+                score = max(score, 5)
+                break
+        best = max(best, score)
+    return best
+
+
 def _run_tesseract(image_path: str) -> Dict[str, Any]:
     try:
         if not _pytesseract:
@@ -298,11 +326,12 @@ def _run_tesseract(image_path: str) -> Dict[str, Any]:
         best_words: List[Dict[str, Any]] = []
         best_full_text = ""
         best_conf = -1.0
+        best_field_score = -1
         best_source_name = "original"
         engine_name = "tesseract"
 
         def evaluate_variant(variant_image: np.ndarray, variant_name: str):
-            nonlocal best_words, best_full_text, best_conf, best_source_name
+            nonlocal best_words, best_full_text, best_conf, best_field_score, best_source_name
             rgb = cv2.cvtColor(variant_image, cv2.COLOR_BGR2RGB)
             pil_img = _PILImage.fromarray(rgb)
             for config in ["--oem 3 --psm 6", "--oem 3 --psm 11", "--oem 3 --psm 12"]:
@@ -317,11 +346,14 @@ def _run_tesseract(image_path: str) -> Dict[str, Any]:
                     continue
                 candidate_text = " ".join(w["text"] for w in candidate_words)
                 candidate_conf = float(np.mean([w["confidence"] for w in candidate_words])) if candidate_words else 0.0
-                if candidate_conf > best_conf:
+                field_score = _net_quantity_signal(candidate_words)
+                if (field_score, candidate_conf) > (best_field_score, best_conf):
                     best_words = candidate_words
                     best_full_text = candidate_text
                     best_conf = candidate_conf
-                    best_source_name = variant_name
+                    best_field_score = field_score
+                    best_source_name = f'{variant_name}:{config}'
+                    logger.debug('OCR variant selected: %s field_score=%s confidence=%.3f', best_source_name, field_score, candidate_conf)
 
         for variant in candidates[:4]:
             evaluate_variant(variant["image"], variant["name"])

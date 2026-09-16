@@ -350,6 +350,37 @@ export default function AnalysisResult() {
                 </div>
               )}
 
+              {result && (
+                <div className="glass-card p-4">
+                  <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
+                    <FileSearch className="w-4 h-4" style={{ color: 'var(--color-gold-500)' }} />
+                    PaddleOCR-VL
+                  </h3>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span style={{ color: 'rgba(226,232,240,0.5)' }}>Status</span>
+                      <span className={result.vlm.status === 'success' ? 'text-green-400' : 'text-amber-300'}>
+                        {result.vlm.status}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span style={{ color: 'rgba(226,232,240,0.5)' }}>Pipeline</span>
+                      <span className="font-medium text-white">{result.vlm.pipeline_version ?? 'v1.5'}</span>
+                    </div>
+                    {result.vlm.error && (
+                      <p className="text-xs mt-2 p-2 rounded" style={{ background: 'rgba(245,158,11,0.1)', color: '#fcd34d' }}>
+                        {result.vlm.error}
+                      </p>
+                    )}
+                    {result.vlm.status === 'success' && (
+                      <p className="text-xs" style={{ color: 'rgba(226,232,240,0.5)' }}>
+                        {Object.values(result.vlm.fields).filter((field) => field.value).length} visual fields detected. Compliance remains rule-engine controlled.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div className="glass-card p-4">
                 <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
                   <Package className="w-4 h-4" style={{ color: 'var(--color-gold-500)' }} />

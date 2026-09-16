@@ -42,6 +42,32 @@ export interface ExtractionResult {
   unit_sale_price: ExtractedField;
 }
 
+export interface VLMField {
+  value: string | null;
+  confidence: number | null;
+  evidence_text: string | null;
+  source_image: string | null;
+  bounding_box: unknown[] | null;
+  status: string;
+}
+
+export interface VLMResult {
+  status: string;
+  engine: string;
+  pipeline_version: string | null;
+  fields: Record<string, VLMField>;
+  source_image: string | null;
+  error: string | null;
+}
+
+export interface HybridField {
+  ocr_value: string | null;
+  vlm_value: string | null;
+  final_value: string | null;
+  status: string;
+  needs_review: boolean;
+}
+
 export type ComplianceStatus = 'COMPLIANT' | 'NON-COMPLIANT' | 'NEEDS REVIEW' | 'NOT APPLICABLE' | 'NOT VERIFIABLE';
 
 export interface RuleEvaluation {
@@ -66,6 +92,8 @@ export interface AnalysisResponse {
   image_quality: ImageQualityResult;
   ocr: OCRResult;
   extraction: ExtractionResult;
+  vlm: VLMResult;
+  hybrid_extraction: Record<string, HybridField>;
   compliance: ComplianceResult;
   created_at: string;
   is_demo: boolean;

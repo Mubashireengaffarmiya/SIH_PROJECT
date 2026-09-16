@@ -5,7 +5,7 @@ Request / Response models for the FastAPI layer.
 """
 
 from __future__ import annotations
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 from datetime import datetime
 from pydantic import BaseModel, Field
 
@@ -65,6 +65,32 @@ class ExtractionResult(BaseModel):
     unit_sale_price: ExtractedField
 
 
+class VLMField(BaseModel):
+    value: Optional[str] = None
+    confidence: Optional[float] = None
+    evidence_text: Optional[str] = None
+    source_image: Optional[str] = None
+    bounding_box: Optional[List[Any]] = None
+    status: str = "NOT_DETECTED"
+
+
+class VLMResult(BaseModel):
+    status: str
+    engine: str = "paddleocr-vl"
+    pipeline_version: Optional[str] = None
+    fields: Dict[str, VLMField] = {}
+    source_image: Optional[str] = None
+    error: Optional[str] = None
+
+
+class HybridField(BaseModel):
+    ocr_value: Optional[str] = None
+    vlm_value: Optional[str] = None
+    final_value: Optional[str] = None
+    status: str
+    needs_review: bool = False
+
+
 # ---------------------------------------------------------------------------
 # Compliance
 # ---------------------------------------------------------------------------
@@ -94,6 +120,8 @@ class AnalysisResponse(BaseModel):
     image_quality: ImageQualityResult
     ocr: OCRResult
     extraction: ExtractionResult
+    vlm: VLMResult
+    hybrid_extraction: Dict[str, HybridField]
     compliance: ComplianceResult
     created_at: datetime
     is_demo: bool = False

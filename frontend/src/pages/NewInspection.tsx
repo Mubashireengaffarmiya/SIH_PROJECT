@@ -44,6 +44,9 @@ export default function NewInspection() {
   const [backendStep, setBackendStep] = useState<number>(-1);
   const [error, setError] = useState<string | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [cameraStarting, setCameraStarting] = useState(false);
+  const [cameraCaptured, setCameraCaptured] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -65,6 +68,7 @@ export default function NewInspection() {
       return;
     }
     setError(null);
+    setCameraCaptured(false);
     setFile(f);
     setPreview((prev) => {
       if (prev) URL.revokeObjectURL(prev);
@@ -84,47 +88,131 @@ export default function NewInspection() {
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
     }
+    if (videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.srcObject = null;
+    }
+    setCameraReady(false);
+    setCameraStarting(false);
     setCameraOpen(false);
   }, []);
 
   useEffect(() => {
     return () => {
       stopCamera();
-      if (preview) URL.revokeObjectURL(preview);
     };
-  }, [preview, stopCamera]);
+  }, [stopCamera]);
 
-  const openCamera = async () => {
+  const markCameraReady = useCallback(async () => {
+    const video = videoRef.current;
+    if (!video || video.readyState < HTMLMediaElement.HAVE_METADATA) return;
+    if (!video.videoWidth || !video.videoHeight) return;
+
+    try {
+      await video.play();
+      if (video.videoWidth && video.videoHeight) {
+        console.debug('Video playing');
+        console.debug(`Video dimensions: ${video.videoWidth} x ${video.videoHeight}`);
+        setCameraReady(true);
+        setCameraStarting(false);
+        console.debug('Camera ready');
+      }
+    } catch (err) {
+      console.error('Camera playback failed', err);
+      setCameraError('Unable to start the camera preview. Please use Upload Image instead.');
+      stopCamera();
+    }
+  }, [stopCamera]);
+
+  const startCamera = useCallback(async () => {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      setCameraError('Camera capture is not supported in this browser.');
+      setCameraError('Camera capture is not supported in this browser. Please upload an image instead.');
+      setCameraStarting(false);
       return;
     }
 
     try {
       setCameraError(null);
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' },
-        audio: false,
-      });
-      streamRef.current = stream;
-      setCameraOpen(true);
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
+      setCameraReady(false);
+      setCameraStarting(true);
+      console.debug('Camera request started');
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } },
+          audio: false,
+        });
+      } catch (preferredError) {
+        const errorName = preferredError instanceof DOMException ? preferredError.name : 'UnknownError';
+        if (!['OverconstrainedError', 'NotFoundError'].includes(errorName)) throw preferredError;
+        console.debug('Preferred camera unavailable, falling back to any video device');
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
       }
-    } catch {
-      setCameraError('Unable to access the camera. Please allow camera permission or upload a file instead.');
+      console.debug('Camera permission granted');
+      console.debug('Stream received');
+      streamRef.current = stream;
+      const video = videoRef.current;
+      if (!video) {
+        console.error('Video element not found');
+        stream.getTracks().forEach((track) => track.stop());
+        setCameraError('Camera preview could not be initialized. Please use Upload Image instead.');
+        setCameraStarting(false);
+        return;
+      }
+
+      console.debug('Video element found');
+      video.srcObject = stream;
+      console.debug('Stream assigned to video');
+      video.onloadedmetadata = () => {
+        console.debug('Video metadata loaded');
+        void markCameraReady();
+      };
+      if (video.readyState >= HTMLMediaElement.HAVE_METADATA) {
+        void markCameraReady();
+      }
+    } catch (err) {
+      const errorName = err instanceof DOMException ? err.name : 'UnknownError';
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      console.error('Camera request failed', errorName, errorMessage);
+      if (errorName === 'NotFoundError') {
+        setCameraError('No camera detected. Please upload an image instead.');
+      } else if (errorName === 'NotAllowedError' || errorName === 'SecurityError') {
+        setCameraError('Camera access was denied. Please allow camera access in your browser settings or use Upload Image.');
+      } else {
+        setCameraError('Unable to access the camera. Please use Upload Image instead.');
+      }
       stopCamera();
     }
+  }, [markCameraReady, stopCamera]);
+
+  useEffect(() => {
+    if (!cameraOpen) return;
+    void startCamera();
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+      }
+    };
+  }, [cameraOpen, startCamera]);
+
+  const openCamera = () => {
+    setCameraError(null);
+    setCameraCaptured(false);
+    setCameraOpen(true);
   };
 
   const captureFromCamera = () => {
-    if (!videoRef.current) return;
+    if (!videoRef.current || !cameraReady) return;
 
     const video = videoRef.current;
     const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth || 1280;
-    canvas.height = video.videoHeight || 720;
+    if (video.readyState < HTMLMediaElement.HAVE_METADATA || !video.videoWidth || !video.videoHeight) {
+      setCameraError('Camera is still starting. Please wait until the preview is ready.');
+      return;
+    }
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
     const ctx = canvas.getContext('2d');
     if (!ctx) {
       setCameraError('Could not capture the camera image.');
@@ -140,8 +228,15 @@ export default function NewInspection() {
 
       const capturedFile = new File([blob], `capture-${Date.now()}.jpg`, { type: 'image/jpeg' });
       setImageFile(capturedFile);
+      setCameraCaptured(true);
       stopCamera();
     }, 'image/jpeg', 0.92);
+  };
+
+  const retakePhoto = () => {
+    removeFile();
+    setCameraCaptured(false);
+    openCamera();
   };
 
   const onDrop = useCallback((e: React.DragEvent) => {
@@ -304,7 +399,7 @@ export default function NewInspection() {
                 onClick={openCamera}
                 className="btn-secondary flex items-center gap-2"
               >
-                <Camera className="w-4 h-4" /> Use camera
+                <Camera className="w-4 h-4" /> Capture Photo
               </button>
             </div>
 
@@ -323,9 +418,19 @@ export default function NewInspection() {
                     Close
                   </button>
                 </div>
-                <video ref={videoRef} className="w-full rounded-xl bg-black" playsInline muted />
+                <video
+                  ref={videoRef}
+                  className="w-full rounded-xl bg-black object-contain"
+                  autoPlay
+                  playsInline
+                  muted
+                  onLoadedMetadata={() => void markCameraReady()}
+                />
+                <p className="mt-2 text-center text-sm text-slate-300">
+                  {cameraStarting ? 'Starting camera...' : cameraReady ? 'Camera ready' : 'Waiting for camera preview...'}
+                </p>
                 <div className="mt-3 flex justify-center">
-                  <button type="button" onClick={captureFromCamera} className="btn-primary flex items-center gap-2">
+                  <button type="button" onClick={captureFromCamera} disabled={!cameraReady} className="btn-primary flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50">
                     <Check className="w-4 h-4" /> Capture photo
                   </button>
                 </div>
@@ -389,7 +494,7 @@ export default function NewInspection() {
                   <div className="flex items-center gap-3 mb-4">
                     <CheckCircle className="w-5 h-5" style={{ color: '#6ee7b7' }} />
                     <span className="text-sm font-medium" style={{ color: '#6ee7b7' }}>
-                      Image selected
+                      {cameraCaptured ? 'Captured Image' : 'Image selected'}
                     </span>
                     <span className="text-xs ml-auto" style={{ color: 'rgba(226,232,240,0.45)' }}>
                       {(file.size / 1024 / 1024).toFixed(2)} MB
@@ -405,6 +510,12 @@ export default function NewInspection() {
                       </button>
                     )}
                   </div>
+                  {cameraCaptured && !analyzing && (
+                    <div className="mb-4 flex justify-center gap-3">
+                      <button type="button" onClick={retakePhoto} className="btn-secondary">Retake</button>
+                      <button type="button" onClick={() => setCameraCaptured(false)} className="btn-primary">Use Photo</button>
+                    </div>
+                  )}
                   <div className="rounded-xl overflow-hidden" style={{ maxHeight: '400px' }}>
                     <img
                       src={preview!}

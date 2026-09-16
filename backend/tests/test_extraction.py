@@ -83,6 +83,58 @@ class TestNetQuantity:
         r = extract_net_quantity("MRP ₹50 Manufacturer XYZ", _words(["MRP", "₹50"]))
         assert r["value"] is None
 
+    def test_decimal_kg(self):
+        r = extract_net_quantity("Net Quantity: 0.5 kg", _words(["Net", "Quantity:", "0.5", "kg"]))
+        assert r["value"] == "0.5 kg"
+
+    def test_decimal_litre(self):
+        r = extract_net_quantity("Net Quantity: 1.25 L", _words(["Net", "Quantity:", "1.25", "L"]))
+        assert r["value"] == "1.25 l"
+
+    def test_decimal_ml_preserves_decimal(self):
+        r = extract_net_quantity("Net Quantity: 500.0 ml", _words(["Net", "Quantity:", "500.0", "ml"]))
+        assert r["value"] == "500.0 ml"
+
+    def test_supported_piece_unit(self):
+        r = extract_net_quantity("Net Qty. 10 pieces", _words(["Net", "Qty.", "10", "pieces"]))
+        assert r["value"] == "10 pieces"
+
+    def test_ocr_numeric_confusion(self):
+        r = extract_net_quantity("NET QUANT1TY 1009", _words(["NET", "QUANT1TY", "1009"]))
+        assert r["value"] == "100 g"
+
+    def test_ocr_letter_o_confusion(self):
+        r = extract_net_quantity("NET WT O.5 kg", _words(["NET", "WT", "O.5", "kg"]))
+        assert r["value"] == "0.5 kg"
+
+    def test_comma_decimal(self):
+        r = extract_net_quantity("NET WT 0,5 kg", _words(["NET", "WT", "0,5", "kg"]))
+        assert r["value"] == "0.5 kg"
+
+    def test_nutrition_quantity_is_not_selected(self):
+        words = [
+            {"text": "Protein", "confidence": 0.98, "bbox": [10, 10, 80, 30]},
+            {"text": "6", "confidence": 0.98, "bbox": [90, 10, 105, 30]},
+            {"text": "g", "confidence": 0.98, "bbox": [110, 10, 125, 30]},
+            {"text": "NET", "confidence": 0.92, "bbox": [10, 100, 50, 120]},
+            {"text": "QUANTITY", "confidence": 0.92, "bbox": [55, 100, 130, 120]},
+            {"text": "100", "confidence": 0.92, "bbox": [140, 100, 175, 120]},
+            {"text": "g", "confidence": 0.92, "bbox": [180, 100, 195, 120]},
+        ]
+        result = extract_net_quantity("Protein 6 g NET QUANTITY 100 g", words)
+        assert result["value"] == "100 g"
+
+    def test_explicit_label_without_value_does_not_use_distant_nutrition(self):
+        words = [
+            {"text": "NET", "confidence": 0.92, "bbox": [10, 100, 50, 120]},
+            {"text": "QUANTITY", "confidence": 0.92, "bbox": [55, 100, 130, 120]},
+            {"text": "Protein", "confidence": 0.98, "bbox": [10, 500, 80, 520]},
+            {"text": "6", "confidence": 0.98, "bbox": [90, 500, 105, 520]},
+            {"text": "g", "confidence": 0.98, "bbox": [110, 500, 125, 520]},
+        ]
+        result = extract_net_quantity("NET QUANTITY Protein 6 g", words)
+        assert result["value"] is None
+
 
 # ---------------------------------------------------------------------------
 # Manufacturer
@@ -236,6 +288,59 @@ class TestExtractAll:
         assert result["best_before"]["value"] is not None
         assert result["country_of_origin"]["value"] is not None
         assert result["consumer_care"]["value"] is not None
+
+    def test_product_name_prevails_over_nutrition_table(self):
+        words = [
+            {"text": "ENERGY", "confidence": 0.91, "bbox": [10, 20, 120, 50]},
+            {"text": "530", "confidence": 0.91, "bbox": [130, 20, 180, 50]},
+            {"text": "kcal", "confidence": 0.91, "bbox": [190, 20, 250, 50]},
+            {"text": "Lay's", "confidence": 0.94, "bbox": [20, 120, 140, 160]},
+            {"text": "Classic", "confidence": 0.94, "bbox": [150, 120, 260, 160]},
+            {"text": "Salted", "confidence": 0.94, "bbox": [270, 120, 390, 160]},
+            {"text": "NET", "confidence": 0.92, "bbox": [20, 200, 100, 230]},
+            {"text": "QUANTITY", "confidence": 0.92, "bbox": [110, 200, 260, 230]},
+            {"text": "52", "confidence": 0.92, "bbox": [270, 200, 310, 230]},
+            {"text": "g", "confidence": 0.92, "bbox": [320, 200, 340, 230]},
+            {"text": "MRP", "confidence": 0.94, "bbox": [20, 260, 90, 290]},
+            {"text": "₹20.00", "confidence": 0.94, "bbox": [100, 260, 190, 290]},
+        ]
+        result = extract_all({"full_text": "ENERGY 530 kcal Lay's Classic Salted NET QUANTITY 52 g MRP ₹20.00", "words": words})
+        assert result["product_name"]["value"] == "Lay's Classic Salted"
+        assert result["net_quantity"]["value"] == "52 g"
+        assert result["mrp"]["value"] == "₹20.00"
+
+    def test_net_quantity_ignores_nutrition_values(self):
+        words = [
+            {"text": "Energy", "confidence": 0.90, "bbox": [10, 10, 100, 36]},
+            {"text": "530", "confidence": 0.90, "bbox": [110, 10, 150, 36]},
+            {"text": "kcal", "confidence": 0.90, "bbox": [160, 10, 210, 36]},
+            {"text": "NET", "confidence": 0.92, "bbox": [10, 120, 80, 150]},
+            {"text": "QUANT1TY", "confidence": 0.92, "bbox": [90, 120, 220, 150]},
+            {"text": "52", "confidence": 0.92, "bbox": [230, 120, 260, 150]},
+            {"text": "g", "confidence": 0.92, "bbox": [270, 120, 290, 150]},
+        ]
+        result = extract_net_quantity("Energy 530 kcal NET QUANT1TY 52 g", words)
+        assert result["value"] == "52 g"
+
+    def test_manufacturer_value_from_keyword_cluster(self):
+        words = [
+            {"text": "Manufactured", "confidence": 0.93, "bbox": [10, 200, 120, 230]},
+            {"text": "&", "confidence": 0.93, "bbox": [120, 200, 130, 230]},
+            {"text": "Packed", "confidence": 0.93, "bbox": [130, 200, 210, 230]},
+            {"text": "by:", "confidence": 0.93, "bbox": [210, 200, 250, 230]},
+            {"text": "PEPSICO", "confidence": 0.92, "bbox": [10, 240, 120, 270]},
+            {"text": "INDIA", "confidence": 0.92, "bbox": [130, 240, 220, 270]},
+            {"text": "REGION", "confidence": 0.92, "bbox": [230, 240, 320, 270]},
+            {"text": "Frito-Lay", "confidence": 0.91, "bbox": [10, 280, 130, 310]},
+            {"text": "India", "confidence": 0.91, "bbox": [140, 280, 200, 310]},
+            {"text": "(India)", "confidence": 0.91, "bbox": [210, 280, 290, 310]},
+            {"text": "Pvt.", "confidence": 0.91, "bbox": [10, 320, 70, 350]},
+            {"text": "Ltd.", "confidence": 0.91, "bbox": [80, 320, 130, 350]},
+        ]
+        result = extract_manufacturer("Manufactured & Packed by: PEPSICO INDIA REGION Frito-Lay India (India) Pvt. Ltd.", words)
+        assert result["value"] is not None
+        assert "PEPSICO" in result["value"]
+        assert "Frito-Lay" in result["value"]
 
     def test_empty_ocr(self):
         ocr = {"full_text": "", "words": []}
