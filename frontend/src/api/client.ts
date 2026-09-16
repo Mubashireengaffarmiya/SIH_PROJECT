@@ -49,9 +49,15 @@ export const login = async (username: string, password: string) => {
 // ---------------------------------------------------------------------------
 // Analysis
 // ---------------------------------------------------------------------------
-export const analyzeImage = async (file: File): Promise<AnalysisResponse> => {
+export const analyzeImage = async (
+  file: File,
+  context: { origin: string; package_type: string; sales_channel: string },
+): Promise<AnalysisResponse> => {
   const formData = new FormData();
   formData.append('file', file);
+  formData.append('origin', context.origin);
+  formData.append('package_type', context.package_type);
+  formData.append('sales_channel', context.sales_channel);
   const res = await api.post<AnalysisResponse>('/api/analyze', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });

@@ -1,4 +1,4 @@
-"""
+﻿"""
 SMART-LM FastAPI Backend
 =========================
 Main application entry point.
@@ -13,7 +13,7 @@ import asyncio
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, Depends
+from fastapi import FastAPI, File, Form, UploadFile, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -28,7 +28,7 @@ from models.schemas import (
 from services.image_processing import load_and_preprocess
 from services.ocr import run_ocr, get_ocr_health
 from services.extraction import extract_all
-from services.hybrid_extraction import build_hybrid_extraction
+from services.hybrid_extraction import build_hybrid_extraction, build_compliance_extraction
 from services.compliance import run_compliance
 from ocr.vlm_engine import PaddleOCRVLEngine
 from services.reports import generate_pdf, generate_docx
@@ -61,11 +61,11 @@ ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".webp"}
 # ---------------------------------------------------------------------------
 app = FastAPI(
     title="SMART-LM API",
-    description="Smart Legal Metrology Compliance & Inspection System — SIH 2026 Prototype",
+    description="Smart Legal Metrology Compliance & Inspection System - SIH 2026 Prototype",
     version="1.0.0-prototype",
 )
 
-# CORS — allow frontend dev servers
+# CORS - allow frontend dev servers
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -125,7 +125,7 @@ def ocr_health_endpoint():
 
 @app.get("/api/vlm/health")
 def vlm_health_endpoint():
-    return _vlm_engine.availability()
+    return _vlm_engine.diagnostics()
 
 
 # ---------------------------------------------------------------------------
@@ -136,10 +136,13 @@ def vlm_health_endpoint():
 async def analyze_image(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    origin: str = Form("UNKNOWN"),
+    package_type: str = Form("UNKNOWN"),
+    sales_channel: str = Form("UNKNOWN"),
 ):
     """
     Full analysis pipeline:
-    Upload → image quality → OCR → extraction → compliance → save to DB
+    Upload -> image quality -> OCR -> extraction -> compliance -> save to DB
     """
     # --- Validate file ---
     ext = os.path.splitext(file.filename or "image.jpg")[1].lower()
@@ -178,15 +181,17 @@ async def analyze_image(
     logger.info("[%s] Running OCR (quality=%s)...", inspection_id, image_quality)
     ocr_result = run_ocr(image_path)
 
-    logger.info("[%s] Running optional PaddleOCR-VL extraction...", inspection_id)
-    if os.getenv("SMARTLM_ENABLE_VLM", "1").lower() in {"0", "false", "no", "off"}:
+    logger.info("[%s] Running PaddleOCR-VL extraction...", inspection_id)
+    vlm_setting = os.getenv("SMARTLM_ENABLE_VLM")
+    vlm_enabled = (vlm_setting or "1").strip().lower() not in {"0", "false", "no", "off"}
+    if not vlm_enabled:
         vlm_result = {
             "status": "disabled",
             "engine": "paddleocr-vl",
             "pipeline_version": _vlm_engine.pipeline_version,
             "fields": {},
             "source_image": image_path,
-            "error": "VLM disabled by SMARTLM_ENABLE_VLM.",
+            "error": "VLM disabled by SMARTLM_ENABLE_VLM explicit configuration.",
             "quality_status": "NOT_VERIFIABLE" if image_quality == "POOR" else "READABLE",
             "quality_message": quality_result.get("message"),
             "blocks": [],
@@ -199,14 +204,39 @@ async def analyze_image(
     logger.info("[%s] Extracting declarations...", inspection_id)
     extraction = extract_all(ocr_result)
     hybrid_extraction = build_hybrid_extraction(extraction, vlm_result)
+    compliance_extraction = build_compliance_extraction(
+        hybrid_extraction,
+        image_quality,
+        ocr_result.get("success", False),
+    )
+
+    # --- Inspection Context ---
+    inspection_context = {
+        "origin": (origin if isinstance(origin, str) else "UNKNOWN").upper(),
+        "package_type": (package_type if isinstance(package_type, str) else "UNKNOWN").upper(),
+        "sales_channel": (sales_channel if isinstance(sales_channel, str) else "UNKNOWN").upper(),
+    }
+
+    logger.info(
+        "[%s] Inspection context: origin=%s package_type=%s sales_channel=%s",
+        inspection_id,
+        inspection_context["origin"],
+        inspection_context["package_type"],
+        inspection_context["sales_channel"],
+    )
 
     # --- Compliance ---
     logger.info("[%s] Running compliance checks...", inspection_id)
-    compliance = run_compliance(extraction, ocr_result, image_quality)
+    compliance = run_compliance(
+        compliance_extraction,
+        ocr_result,
+        image_quality,
+        inspection_context=inspection_context,
+    )
 
     # --- Persist to database ---
     now = datetime.utcnow()
-    product_name = extraction.get("product_name", {}).get("value")
+    product_name = compliance_extraction.get("product_name", {}).get("value")
     hybrid_product = hybrid_extraction.get("product_name", {})
     if not product_name and hybrid_product.get("status") == "VLM_ONLY":
         product_name = hybrid_product.get("final_value")
@@ -239,7 +269,7 @@ async def analyze_image(
     field_statuses = compliance.get("field_statuses", {})
 
     for field_key, field_label in field_map.items():
-        field_data = extraction.get(field_key, {})
+        field_data = compliance_extraction.get(field_key, {})
         # Find status for this field from compliance
         field_status = None
         for rule_id, status in field_statuses.items():
@@ -533,3 +563,7 @@ def create_docx_report(inspection_id: str, db: Session = Depends(get_db)):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
+
+
+

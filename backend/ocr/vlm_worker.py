@@ -1,4 +1,4 @@
-"""Subprocess worker used when FastAPI runs outside paddle_env."""
+"""Subprocess worker used when FastAPI runs outside the OCR environment."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from ocr.vlm_engine import _parse_blocks
 
 def main() -> None:
     image_path = Path(sys.argv[1])
-    pipeline_version = sys.argv[2] if len(sys.argv) > 2 else "v1.5"
+    pipeline_version = sys.argv[2] if len(sys.argv) > 2 else "v1.6"
     output_dir = Path(sys.argv[3]) if len(sys.argv) > 3 else None
     with contextlib.redirect_stdout(sys.stderr):
         engine = PaddleOCRVL(

@@ -12,6 +12,18 @@ def normalize_currency_text(value: str) -> str:
     return text
 
 
+def normalize_label_text(value: str) -> str:
+    """Apply conservative OCR cleanup for comparing label evidence."""
+    text = normalize_currency_text(value)
+    text = re.sub(r"(?i)\b(mrp)\s*[:\-]?\s*", r"\1 ", text)
+    text = re.sub(r"(?i)(\d)\s+(kg|g|mg|l|ml)\b", r"\1\2", text)
+    text = re.sub(r"(?i)\b(ltr|litre|litres)\b", "l", text)
+    text = re.sub(r"(?i)\b(kilograms?)\b", "kg", text)
+    text = re.sub(r"(?i)\b(milligrams?)\b", "mg", text)
+    text = re.sub(r"(?i)\b(milliliters?|millilitres?)\b", "ml", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def currency_amount(value: str) -> str | None:
     normalized = normalize_currency_text(value)
     match = re.search(

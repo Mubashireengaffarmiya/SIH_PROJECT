@@ -7,7 +7,7 @@ from services.text_normalization import currency_amount, normalize_currency_text
 
 def test_vlm_import_and_default_version():
     engine = PaddleOCRVLEngine()
-    assert engine.pipeline_version == "v1.5"
+    assert engine.pipeline_version == "v1.6"
     assert "available" in engine.availability()
 
 

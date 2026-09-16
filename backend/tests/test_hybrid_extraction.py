@@ -1,4 +1,10 @@
 from services.hybrid_extraction import build_hybrid_extraction
+from services.text_normalization import normalize_label_text
+
+
+def test_label_normalization_preserves_value_while_standardizing_safe_variants():
+    assert normalize_label_text("MRP: Rs. 120") == "MRP ₹120"
+    assert normalize_label_text("Net Qty 500 millilitres") == "Net Qty 500 ml"
 
 
 def test_hybrid_agreement_preserves_ocr_value():

@@ -7,7 +7,7 @@ Evaluates the extracted declarations and determines overall compliance.
 
 import logging
 import re
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from regulations.rule_loader import RuleDataError, load_rules
 
@@ -36,6 +36,97 @@ def _load_rules(as_of=None) -> List[Dict[str, Any]]:
         return []
 
 
+def _rule_is_applicable(
+    rule: Dict[str, Any],
+    inspection_context: Dict[str, Any],
+) -> tuple[bool, bool, str]:
+    """
+    Safely determine whether a rule applies to this inspection.
+
+    Returns:
+        (applicable, needs_review, reason)
+
+    IMPORTANT:
+    Missing context never proves that a conditional rule applies.
+    """
+
+    applicability_type = rule.get("applicability_type", "ALWAYS")
+
+    # Rules explicitly marked ALWAYS can be evaluated directly.
+    if applicability_type == "ALWAYS":
+        return True, False, ""
+
+    if applicability_type != "CONDITIONAL":
+        return False, True, (
+            f"Unsupported applicability type '{applicability_type}'."
+        )
+
+    rule_id = rule.get("rule_id", "")
+
+    # --------------------------------------------------------
+    # Explicit per-rule override.
+    # --------------------------------------------------------
+
+    explicit_key = f"rule_applicable:{rule_id}"
+
+    if inspection_context.get(explicit_key) is True:
+        return True, False, ""
+
+    if inspection_context.get(explicit_key) is False:
+        return False, False, "Rule was explicitly marked not applicable."
+
+    # --------------------------------------------------------
+    # Unit sale price rule
+    # --------------------------------------------------------
+
+    if rule.get("validation_method") == "unit_sale_price_check":
+
+        package_type = str(
+            inspection_context.get("package_type", "UNKNOWN")
+        ).upper()
+
+        # The official rule material identifies combination,
+        # group and multi-piece packages as relevant exceptions.
+        if package_type in {
+            "COMBINATION",
+            "GROUP",
+            "MULTI_PIECE",
+        }:
+            return False, False, (
+                f"Unit sale price requirement is not applicable "
+                f"for package type '{package_type}'."
+            )
+
+        if package_type == "SINGLE":
+            return True, False, ""
+
+        # Unknown package type means applicability cannot safely
+        # be established.
+        return False, True, (
+            "Package type is unknown. Unit sale price applicability "
+            "cannot be established safely."
+        )
+
+    # --------------------------------------------------------
+    # Generic conditional-rule support for future rules.
+    # --------------------------------------------------------
+
+    applicable_rules = inspection_context.get("applicable_rules") or []
+    if rule_id in applicable_rules:
+        return True, False, ""
+
+    not_applicable_rules = (
+        inspection_context.get("not_applicable_rules") or []
+    )
+    if rule_id in not_applicable_rules:
+        return False, False, "Rule was explicitly marked not applicable."
+
+    return False, True, (
+        "Applicability could not be established from the "
+        "available inspection context."
+    )
+
+
 def _evaluate_field(
     extraction: Dict[str, Any], field_key: str, rule: Dict[str, Any],
     ocr_success: bool, image_quality: str, custom_check: callable = None
@@ -44,8 +135,9 @@ def _evaluate_field(
     value = field_data.get("value")
     conf = field_data.get("confidence", "LOW")
     evidence = field_data.get("evidence_text")
+    hybrid_status = field_data.get("hybrid_status")
     
-    if not ocr_success or image_quality == "POOR":
+    if not ocr_success or image_quality == "POOR" or hybrid_status in {"CONFLICT", "NOT_VERIFIABLE"}:
         result = NOT_VERIFIABLE
     elif value is None:
         # OCR succeeded but field is missing.
@@ -66,7 +158,8 @@ def _evaluate_field(
         "rule_reference": rule.get("rule_number", ""),
         "evidence": evidence,
         "confidence": conf if value is not None else "LOW",
-        "result": result
+        "result": result,
+        "evidence_status": hybrid_status,
     }
 
 
@@ -84,9 +177,11 @@ def run_compliance(
     extraction: Dict[str, Any],
     ocr_result: Dict[str, Any],
     image_quality: str,
+    inspection_context: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     rules = _load_rules()
     ocr_success = ocr_result.get("success", False)
+    inspection_context = inspection_context or {}
 
     # Never report compliance when no verified/effective regulatory rules
     # are available. An empty rule set means the legal basis for the
@@ -121,14 +216,47 @@ def run_compliance(
         method = rule.get("validation_method", "")
         if method not in mapping:
             continue
-            
+
+        applicable, applicability_review, applicability_reason = (
+            _rule_is_applicable(
+                rule,
+                inspection_context,
+            )
+        )
+
+        # A conditional rule whose applicability cannot be established
+        # is a REVIEW item, not a missing declaration and not a violation.
+        if not applicable:
+            if applicability_review:
+                evaluations.append({
+                    "requirement": rule.get("requirement", ""),
+                    "extracted_value": None,
+                    "expected_requirement": rule.get(
+                        "evidence_required", ""
+                    ),
+                    "rule_reference": rule.get("rule_number", ""),
+                    "evidence": None,
+                    "confidence": "LOW",
+                    "result": NEEDS_REVIEW,
+                    "applicability_status": "NEEDS_REVIEW",
+                    "applicability_reason": applicability_reason,
+                })
+            continue
+
         field_key, custom_check = mapping[method]
-        
-        # Product category applicability logic could be expanded here. 
-        # For now we run all if they are ALL, or evaluate appropriately.
-        # Since this is a prototype, we evaluate all.
-        
-        evaluation = _evaluate_field(extraction, field_key, rule, ocr_success, image_quality, custom_check)
+
+        evaluation = _evaluate_field(
+            extraction,
+            field_key,
+            rule,
+            ocr_success,
+            image_quality,
+            custom_check,
+        )
+
+        evaluation["applicability_status"] = "APPLICABLE"
+        evaluation["applicability_reason"] = ""
+
         evaluations.append(evaluation)
 
     

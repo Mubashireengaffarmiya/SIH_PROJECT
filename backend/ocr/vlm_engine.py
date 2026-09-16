@@ -162,21 +162,49 @@ class PaddleOCRVLEngine:
     """Lazy, optional PaddleOCR-VL runner that never decides compliance."""
 
     def __init__(self, pipeline_version: Optional[str] = None):
-        self.pipeline_version = pipeline_version or os.getenv("SMARTLM_VLM_PIPELINE_VERSION", "v1.5")
+        self.pipeline_version = pipeline_version or os.getenv("SMARTLM_VLM_PIPELINE_VERSION", "v1.6")
         self._pipeline = None
 
     @staticmethod
-    def availability() -> Dict[str, Any]:
+    def availability(probe_model: bool = False) -> Dict[str, Any]:
         configured = os.getenv("SMARTLM_PADDLE_PYTHON")
-        default = Path(__file__).resolve().parents[3] / "paddle_env" / "Scripts" / "python.exe"
+        default = Path(__file__).resolve().parents[3] / ".paddleocr-venv" / "Scripts" / "python.exe"
         worker_available = Path(configured).is_file() if configured else default.is_file()
-        return {
+        result = {
             "available": _PADDLEOCR_VL is not None or worker_available,
             "engine": "paddleocr-vl" if _PADDLEOCR_VL is not None else "paddleocr-vl-external" if worker_available else "none",
-            "pipeline_version": os.getenv("SMARTLM_VLM_PIPELINE_VERSION", "v1.5"),
+            "pipeline_version": os.getenv("SMARTLM_VLM_PIPELINE_VERSION", "v1.6"),
             "error": _IMPORT_ERROR,
             "external_worker_available": worker_available,
+            "python_executable": sys.executable,
+            "configured_worker_python": str(configured or default),
+            "import_available": _PADDLEOCR_VL is not None,
+            "model_initialized": False,
         }
+        if probe_model and _PADDLEOCR_VL is not None:
+            try:
+                PaddleOCRVLEngine()._get_pipeline()
+                result["model_initialized"] = True
+            except Exception as exc:
+                result["error"] = f"{type(exc).__name__}: {exc}"
+        return result
+
+    def diagnostics(self, probe_model: bool = True) -> Dict[str, Any]:
+        result = self.availability(probe_model=False)
+        if probe_model and _PADDLEOCR_VL is not None:
+            try:
+                self._get_pipeline()
+                result["model_initialized"] = True
+            except Exception as exc:
+                result["error"] = f"{type(exc).__name__}: {exc}"
+        raw_setting = os.getenv("SMARTLM_ENABLE_VLM")
+        normalized = (raw_setting or "1").strip().lower()
+        result.update({
+            "vlm_enabled": normalized not in {"0", "false", "no", "off"},
+            "configured_value": raw_setting,
+            "disable_reason": "SMARTLM_ENABLE_VLM explicitly disables VLM" if normalized in {"0", "false", "no", "off"} else None,
+        })
+        return result
 
     def _get_pipeline(self):
         if self._pipeline is None:
@@ -231,13 +259,13 @@ class PaddleOCRVLEngine:
             return base
 
     def _run_external_worker(self, path: Path, output_dir: Optional[str], base: Dict[str, Any]) -> Dict[str, Any]:
-        """Run PaddleOCR-VL from paddle_env when the API process uses another venv."""
+        """Run PaddleOCR-VL from the designated OCR environment when needed."""
         configured = os.getenv("SMARTLM_PADDLE_PYTHON")
-        default = Path(__file__).resolve().parents[3] / "paddle_env" / "Scripts" / "python.exe"
+        default = Path(__file__).resolve().parents[3] / ".paddleocr-venv" / "Scripts" / "python.exe"
         python_executable = Path(configured) if configured else default
         worker = Path(__file__).with_name("vlm_worker.py")
         if not python_executable.is_file():
-            base["error"] = f"PaddleOCR-VL unavailable and paddle_env Python was not found: {python_executable}"
+            base["error"] = f"PaddleOCR-VL unavailable and OCR Python was not found: {python_executable}"
             return base
         command = [str(python_executable), str(worker), str(path), self.pipeline_version]
         if output_dir:

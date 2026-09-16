@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import {
   Upload,
   X,
@@ -34,6 +35,9 @@ const FLOW_STEPS = [
 export default function NewInspection() {
   const [activeStep, setActiveStep] = useState(1);
   const [productCategory, setProductCategory] = useState('');
+  const [origin, setOrigin] = useState('UNKNOWN');
+  const [packageType, setPackageType] = useState('UNKNOWN');
+  const [salesChannel, setSalesChannel] = useState('UNKNOWN');
   
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -269,7 +273,11 @@ export default function NewInspection() {
       await stepDelay(500);
       setBackendStep(2);
 
-      const result = await analyzeImage(file);
+      const result = await analyzeImage(file, {
+        origin,
+        package_type: packageType,
+        sales_channel: salesChannel,
+      });
 
       setBackendStep(3);
       await stepDelay(300);
@@ -283,9 +291,22 @@ export default function NewInspection() {
         },
       });
     } catch (err: unknown) {
-      const msg =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
-        'Analysis failed. Please check that the backend is running and try again.';
+      let msg = 'Analysis failed.';
+      if (axios.isAxiosError(err)) {
+        const status = err.response?.status;
+        const detail = err.response?.data?.detail;
+        const responseMessage = typeof detail === 'string'
+          ? detail
+          : err.response?.data?.message;
+        if (status) msg += ` HTTP ${status}.`;
+        if (responseMessage) msg += ` Detail: ${responseMessage}`;
+        else if (err.message) msg += ` Message: ${err.message}`;
+        else if (!err.response) msg += ' Message: Backend request could not be reached.';
+      } else if (err instanceof Error) {
+        msg += ` Message: ${err.message}`;
+      } else {
+        msg += ` Message: ${String(err)}`;
+      }
       setError(msg);
       setBackendStep(-1);
       setActiveStep(2); // Revert to images step
@@ -356,6 +377,35 @@ export default function NewInspection() {
                 <option value="hardware">Hardware & Tools</option>
                 <option value="other">Other</option>
               </select>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Product Origin</label>
+                <select className="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-white" value={origin} onChange={(e) => setOrigin(e.target.value)}>
+                  <option value="UNKNOWN">Unknown</option>
+                  <option value="DOMESTIC">Domestic</option>
+                  <option value="IMPORTED">Imported</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Package Type</label>
+                <select className="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-white" value={packageType} onChange={(e) => setPackageType(e.target.value)}>
+                  <option value="UNKNOWN">Unknown</option>
+                  <option value="SINGLE">Single</option>
+                  <option value="GROUP">Group</option>
+                  <option value="COMBINATION">Combination</option>
+                  <option value="MULTI_PIECE">Multi-piece</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Sales Channel</label>
+                <select className="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-white" value={salesChannel} onChange={(e) => setSalesChannel(e.target.value)}>
+                  <option value="UNKNOWN">Unknown</option>
+                  <option value="RETAIL">Retail</option>
+                  <option value="ECOMMERCE">E-commerce</option>
+                </select>
+              </div>
             </div>
             
             <div className="pt-4 flex justify-end">

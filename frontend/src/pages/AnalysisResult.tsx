@@ -411,6 +411,40 @@ export default function AnalysisResult() {
         )}
 
         {activeTab === 'extracted' && (
+          <div className="space-y-4">
+          {result && (
+            <div className="glass-card overflow-hidden">
+              <div className="p-4 border-b" style={{ borderColor: 'rgba(212,175,55,0.1)' }}>
+                <h3 className="text-sm font-semibold text-white">OCR + VLM Evidence</h3>
+                <p className="text-xs mt-1" style={{ color: 'rgba(226,232,240,0.4)' }}>
+                  Reconciled evidence is shown as returned by the analysis pipeline. Conflicts require review.
+                </p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead style={{ color: 'rgba(226,232,240,0.45)' }}>
+                    <tr>
+                      <th className="px-4 py-3">Field</th><th className="px-4 py-3">OCR</th><th className="px-4 py-3">VLM</th><th className="px-4 py-3">Final</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Confidence / Evidence</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
+                    {Object.entries(result.hybrid_extraction).map(([key, field]) => (
+                      <tr key={key}>
+                        <td className="px-4 py-3 font-semibold text-slate-200">{FIELD_LABELS[key] ?? key}</td>
+                        <td className="px-4 py-3 text-slate-300">{field.ocr_value ?? 'Not detected'}</td>
+                        <td className="px-4 py-3 text-slate-300">{field.vlm_value ?? 'Not detected'}</td>
+                        <td className="px-4 py-3 text-slate-200">{field.final_value ?? 'Not verified'}</td>
+                        <td className="px-4 py-3"><StatusBadge status={field.status as any} /></td>
+                        <td className="px-4 py-3 text-slate-400"><ConfidenceBadge confidence={field.confidence} />
+                          {(field.ocr_evidence || field.vlm_evidence) && <div className="mt-1 max-w-xs break-words">{field.ocr_evidence || field.vlm_evidence}</div>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
           <div className="glass-card overflow-hidden">
             <div className="p-4 border-b" style={{ borderColor: 'rgba(212,175,55,0.1)' }}>
               <h3 className="text-sm font-semibold text-white flex items-center gap-2">
@@ -446,6 +480,7 @@ export default function AnalysisResult() {
                 </div>
               ))}
             </div>
+          </div>
           </div>
         )}
 

@@ -86,7 +86,7 @@ async def _run(monkeypatch, vlm_result, quality="GOOD", enabled="1", extraction=
     compliance = _compliance()
     compliance_calls = []
 
-    def fake_compliance(extracted, ocr_result, image_quality):
+    def fake_compliance(extracted, ocr_result, image_quality, inspection_context=None):
         compliance_calls.append((extracted, ocr_result, image_quality))
         return compliance
 
@@ -122,7 +122,8 @@ def test_analysis_vlm_enabled_returns_hybrid_without_changing_compliance(monkeyp
     assert response.vlm.status == "success"
     assert response.hybrid_extraction["product_name"].status == "VLM_ONLY"
     assert vlm.calls == 1
-    assert compliance_calls[0][0]["product_name"]["value"] is None
+    assert compliance_calls[0][0]["product_name"]["value"] == "Visual Product"
+    assert compliance_calls[0][0]["product_name"]["confidence"] == "LOW"
     stored_inspection = next(item for item in db.added if isinstance(item, main.Inspection))
     assert stored_inspection.product_name == "Visual Product"
 

@@ -93,6 +93,7 @@ class HybridField(BaseModel):
     final_value: Optional[str] = None
     status: str
     needs_review: bool = False
+    confidence: str = "LOW"
     ocr_evidence: Optional[str] = None
     vlm_evidence: Optional[str] = None
 

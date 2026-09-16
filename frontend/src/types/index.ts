@@ -70,6 +70,7 @@ export interface HybridField {
   final_value: string | null;
   status: string;
   needs_review: boolean;
+  confidence: 'HIGH' | 'MEDIUM' | 'LOW';
   ocr_evidence: string | null;
   vlm_evidence: string | null;
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import {
   ClipboardList,
@@ -20,16 +21,36 @@ export default function Dashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [backendOk, setBackendOk] = useState<boolean | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
 
   const load = async () => {
     try {
       const data = await getDashboard();
       setStats(data);
       setBackendOk(true);
-    } catch {
+      setLoadError(null);
+    } catch (error: unknown) {
       setBackendOk(false);
+      if (axios.isAxiosError(error)) {
+        const status = error.response?.status;
+        if (status === 401) {
+          logout();
+          navigate('/login', { state: { message: 'Your session expired. Please sign in again.' } });
+          return;
+        }
+        if (status === 403) {
+          setLoadError('You do not have permission to view the dashboard.');
+          return;
+        }
+        if (error.response) {
+          const detail = error.response.data?.detail;
+          setLoadError(typeof detail === 'string' ? detail : `Dashboard request failed (${status}).`);
+          return;
+        }
+      }
+      setLoadError('Unable to reach the backend. Check that the API is running on port 8000.');
     } finally {
       setLoading(false);
     }
@@ -102,7 +123,7 @@ export default function Dashboard() {
           {backendOk ? <Wifi className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />}
           {backendOk
             ? 'Backend connected — SMART-LM API is online'
-            : 'Backend offline — Check API connection'}
+            : loadError ?? 'Backend offline — Check API connection'}
         </div>
       )}
 

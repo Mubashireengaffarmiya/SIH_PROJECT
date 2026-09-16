@@ -1,2 +1,2 @@
-# Install this optional dependency into paddle_env, not the project's .venv.
+# Install this optional dependency into .paddleocr-venv, not the project's .venv.
 paddleocr[doc-parser]

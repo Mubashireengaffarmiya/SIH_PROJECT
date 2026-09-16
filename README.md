@@ -21,6 +21,34 @@ SMART-LM supports the officer's decision-making process. It does not replace the
 
 ## Technology Stack Details
 
+## Development Setup
+
+Use the dedicated OCR environment for the backend. It contains the working
+PaddleOCR 3.7 and PaddleOCR-VL installation; do not start the backend with the
+older project `.venv` when OCR is required.
+
+From PowerShell:
+
+```powershell
+cd C:\Users\Manasvi\Documents\sih_project\SIH_PROJECT\backend
+& C:\Users\Manasvi\Documents\sih_project\.paddleocr-venv\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000
+```
+
+VLM is enabled by default. To intentionally disable it for an OCR-only run,
+set `SMARTLM_ENABLE_VLM=0` in the same terminal before starting the backend.
+The `/api/vlm/health` endpoint reports the effective setting, interpreter,
+PaddleOCR-VL import status, and model initialization status.
+
+In a second terminal:
+
+```powershell
+cd C:\Users\Manasvi\Documents\sih_project\SIH_PROJECT\frontend
+npm install
+npm run dev
+```
+
+The Vite proxy forwards `/api` and `/uploads` to `http://localhost:8000`.
+
 ### Programming Languages
 
 - **Python:** Backend API, OCR pipeline, image processing, extraction, compliance evaluation, database access, and report generation.
@@ -46,6 +74,10 @@ SMART-LM supports the officer's decision-making process. It does not replace the
 - **ReportLab:** PDF report generation.
 - **python-docx:** DOCX report generation.
 - **Pytest:** Backend testing.
+
+If PaddleOCR inference encounters a machine-specific runtime failure, the
+backend records the error and uses the configured Tesseract fallback rather
+than returning fabricated OCR data.
 
 ### Database and Configuration
 

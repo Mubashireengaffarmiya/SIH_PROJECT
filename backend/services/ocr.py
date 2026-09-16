@@ -11,6 +11,7 @@ If both engines fail, returns a safe error dict — does NOT raise.
 """
 
 import logging
+import json
 import os
 import re
 import shutil
@@ -155,9 +156,10 @@ def _get_paddle() -> Any:
     global _paddle_instance
     if _paddle_instance is None:
         _paddle_instance = _PaddleOCR(
-            use_angle_cls=True,
             lang="en",
-            show_log=False,
+            use_doc_orientation_classify=False,
+            use_doc_unwarping=False,
+            use_textline_orientation=False,
         )
     return _paddle_instance
 
@@ -194,11 +196,16 @@ def run_ocr(image_path: str) -> Dict[str, Any]:
 def _run_paddle(image_path: str) -> Dict[str, Any]:
     try:
         ocr = _get_paddle()
-        result = ocr.ocr(image_path, cls=True)
+        result = next(iter(ocr.predict(
+            image_path,
+            use_doc_orientation_classify=False,
+            use_doc_unwarping=False,
+            use_textline_orientation=False,
+        )), None)
 
         words: List[Dict[str, Any]] = []
 
-        if result is None or (len(result) == 1 and result[0] is None):
+        if result is None:
             return {
                 "words": [],
                 "full_text": "",
@@ -207,21 +214,28 @@ def _run_paddle(image_path: str) -> Dict[str, Any]:
                 "error": None,
             }
 
-        for line_group in result:
-            if line_group is None:
+        payload = result.json if isinstance(result.json, dict) else json.loads(result.json)
+        texts = payload.get("rec_texts") or []
+        scores = payload.get("rec_scores") or []
+        boxes = payload.get("rec_boxes") or payload.get("rec_polys") or []
+        for index, text in enumerate(texts):
+            if not str(text).strip():
                 continue
-            for detection in line_group:
-                # detection = [bbox_points, (text, confidence)]
-                bbox_points, (text, confidence) = detection
-                # Convert quad to [x1, y1, x2, y2] bounding box
-                xs = [pt[0] for pt in bbox_points]
-                ys = [pt[1] for pt in bbox_points]
+            points = boxes[index] if index < len(boxes) else []
+            if points and len(points) >= 4 and isinstance(points[0], (list, tuple)):
+                xs = [float(point[0]) for point in points]
+                ys = [float(point[1]) for point in points]
                 bbox = [min(xs), min(ys), max(xs), max(ys)]
-                words.append({
-                    "text": text.strip(),
-                    "confidence": round(float(confidence), 4),
-                    "bbox": [round(v, 1) for v in bbox],
-                })
+            elif len(points) >= 4:
+                bbox = [float(value) for value in points[:4]]
+            else:
+                bbox = [0.0, 0.0, 0.0, 0.0]
+            confidence = float(scores[index]) if index < len(scores) else 0.0
+            words.append({
+                "text": str(text).strip(),
+                "confidence": round(confidence, 4),
+                "bbox": [round(value, 1) for value in bbox],
+            })
 
         full_text = " ".join(w["text"] for w in words)
         return {
@@ -235,7 +249,7 @@ def _run_paddle(image_path: str) -> Dict[str, Any]:
     except Exception as exc:
         logger.error("PaddleOCR failed: %s", exc)
         # Try tesseract as secondary fallback
-        if _TESSERACT_AVAILABLE:
+        if _apply_tesseract_path() or _TESSERACT_AVAILABLE:
             logger.info("Attempting Tesseract fallback after PaddleOCR failure.")
             result = _run_tesseract(image_path)
             result["engine"] = "tesseract-fallback"
