@@ -5,15 +5,13 @@ Strictly follows the Legal Metrology (Packaged Commodities) Rules, 2011.
 Evaluates the extracted declarations and determines overall compliance.
 """
 
-import json
 import logging
-import os
 import re
 from typing import Dict, Any, List
 
-logger = logging.getLogger(__name__)
+from regulations.rule_loader import RuleDataError, load_rules
 
-_RULES_PATH = os.path.join(os.path.dirname(__file__), "..", "rules", "rules.json")
+logger = logging.getLogger(__name__)
 
 # Status constants
 COMPLIANT = "COMPLIANT"
@@ -23,13 +21,18 @@ NOT_APPLICABLE = "NOT APPLICABLE"
 NOT_VERIFIABLE = "NOT VERIFIABLE"
 
 
-def _load_rules() -> List[Dict[str, Any]]:
+def _load_rules(as_of=None) -> List[Dict[str, Any]]:
+    """
+    Load only government-source-backed rules that have passed verification.
+
+    The regulations loader intentionally ignores DRAFT/unverified rules.
+    A malformed regulatory dataset is treated as an error rather than
+    silently falling back to the legacy rules.
+    """
     try:
-        with open(_RULES_PATH, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return data.get("rules", [])
-    except Exception as exc:
-        logger.error("Could not load rules.json: %s", exc)
+        return load_rules(as_of=as_of)
+    except RuleDataError as exc:
+        logger.error("Could not load verified regulation rules: %s", exc)
         return []
 
 
@@ -84,7 +87,21 @@ def run_compliance(
 ) -> Dict[str, Any]:
     rules = _load_rules()
     ocr_success = ocr_result.get("success", False)
-    
+
+    # Never report compliance when no verified/effective regulatory rules
+    # are available. An empty rule set means the legal basis for the
+    # compliance decision is unavailable.
+    if not rules:
+        return {
+            "overall_status": NEEDS_REVIEW,
+            "overall_confidence": "LOW",
+            "evaluations": [],
+            "summary": (
+                "No verified and currently effective Legal Metrology rules "
+                "are available for this analysis. Human review is required."
+            ),
+        }
+
     evaluations = []
     
     mapping = {

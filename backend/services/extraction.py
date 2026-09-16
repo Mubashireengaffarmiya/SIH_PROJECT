@@ -176,16 +176,22 @@ def extract_mrp(full_text: str, words: List[Dict[str, Any]], source_image: Optio
     """Extract MRP only when it is explicitly associated with an MRP keyword and nearby value."""
     normalized_text = _normalize_ocr_text(full_text)
     pattern = re.compile(
-        r'(?:MRP|M\.R\.P\.?|Maximum\s+Retail\s+Price)\s*[:\-]?\s*(?:Rs\.?|₹|INR)?\s*[&]?\s*([0-9]+(?:\.[0-9]{1,2})?)',
+        r'(?:MRP|M\.R\.P\.?|Maximum\s+Retail\s+Price)\s*[:\-]?\s*(?:Rs\.?|Rs|₹|INR)?\s*[&]?\s*(\d+(?:[.,]\d{1,2})?)\s*(?:/-)?',
         re.IGNORECASE,
     )
     m = pattern.search(normalized_text)
     if m:
-        val = f"₹{m.group(1)}"
-        nearby = [w for w in words if "mrp" in _normalize_ocr_text(w["text"]).lower() or "₹" in w["text"] or "rs" in _normalize_ocr_text(w["text"]).lower() or any(ch.isdigit() for ch in w["text"])]
+        value = f"₹{m.group(1).replace(',', '.')}"
+        nearby = [
+            w for w in words
+            if "mrp" in _normalize_ocr_text(w["text"]).lower()
+            or "₹" in w["text"]
+            or "rs" in _normalize_ocr_text(w["text"]).lower()
+            or any(ch.isdigit() for ch in w["text"])
+        ]
         avg_conf = sum(w["confidence"] for w in nearby) / len(nearby) if nearby else 0.8
         return {
-            "value": val,
+            "value": value,
             "confidence": _combine_confidence(_confidence_from_ocr(avg_conf), True),
             "evidence_text": m.group(0),
         }
@@ -195,18 +201,43 @@ def extract_mrp(full_text: str, words: List[Dict[str, Any]], source_image: Optio
             mrp_crop = _get_mrp_crop_from_image(source_image, words)
             if mrp_crop is not None:
                 cleaned_crop = preprocess_mrp_crop(mrp_crop)
-                text = pytesseract.image_to_string(cleaned_crop, config=r'--psm 6 -c tessedit_char_whitelist=0123456789.')
-                digit_text = re.sub(r'[^0-9.]', '', text.strip())
-                if digit_text and re.fullmatch(r'\d+(?:\.\d+)?', digit_text):
-                    return {
-                        "value": f"₹{digit_text}",
-                        "confidence": "MEDIUM",
-                        "evidence_text": digit_text,
-                    }
+                text = pytesseract.image_to_string(
+                    cleaned_crop,
+                    config=r'--psm 6 -c tessedit_char_whitelist=0123456789.,₹RrSsIiNnMmPp/: -',
+                )
+                crop_text = _normalize_ocr_text(text)
+                if not crop_text:
+                    return _empty_field()
+
+                matches = re.findall(
+                    r'(?:MRP|MAXIMUM\s+RETAIL\s+PRICE|₹|RS\.?|RS|INR)\s*[:\-]?\s*(\d+(?:[.,]\d{1,2})?)',
+                    crop_text,
+                    flags=re.IGNORECASE,
+                )
+                if not matches:
+                    return _empty_field()
+
+                unique_values = []
+                for candidate in matches:
+                    value = f"₹{candidate.replace(',', '.')}"
+                    if value not in unique_values:
+                        unique_values.append(value)
+
+                if len(unique_values) > 1:
+                    logger.warning("Multiple MRP candidates detected in crop; refusing to guess: %s", unique_values)
+                    return {"value": None, "confidence": "LOW", "evidence_text": crop_text[:200]}
+
+                return {
+                    "value": unique_values[0],
+                    "confidence": "MEDIUM",
+                    "evidence_text": crop_text[:200],
+                }
         except Exception as exc:
             logger.warning("Targeted MRP OCR failed: %s", exc)
 
     return _empty_field()
+
+
 
 
 _QUANTITY_UNIT_PATTERN = r'(?:mg|g|gm|gram|grams|kg|ml|l|litre|liter|pieces?|pcs|units?)'

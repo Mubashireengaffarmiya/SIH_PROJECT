@@ -52,6 +52,15 @@ class TestMRP:
         r = extract_mrp("MRP INR 75", _words(["MRP", "INR", "75"]))
         assert r["value"] is not None
 
+    def test_common_mrp_variants_are_normalized(self):
+        for text in ("MRP ₹120", "MRP Rs. 120", "MRP Rs 120", "MRP INR 120"):
+            r = extract_mrp(text, _words(text.split()))
+            assert r["value"] == "₹120", text
+
+    def test_unrelated_numbers_are_not_mrp(self):
+        r = extract_mrp("Net Qty 500g, phone 9876543210, PIN 110001", _words(["Net", "Qty", "500g", "phone", "9876543210", "PIN", "110001"]))
+        assert r["value"] is None
+
 
 # ---------------------------------------------------------------------------
 # Net Quantity

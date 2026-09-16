@@ -220,10 +220,38 @@ def quality_gate(quality_result: Dict[str, Any]) -> Dict[str, str]:
     """Describe whether missing fields can be treated as genuinely undetected."""
     width = int(quality_result.get("width", 0) or 0)
     height = int(quality_result.get("height", 0) or 0)
-    quality = quality_result.get("quality", "POOR")
-    if min(width, height) < MIN_READABLE_DIMENSION or quality == "POOR":
+    quality = str(quality_result.get("quality", "POOR") or "POOR").upper()
+
+    if min(width, height) < MIN_READABLE_DIMENSION:
+        return {
+            "status": "NOT_VERIFIABLE",
+            "message": quality_result.get("message", "Image is too small to read reliably."),
+        }
+    if quality in {"POOR", "DIFFICULT"}:
         return {
             "status": "NOT_VERIFIABLE",
             "message": quality_result.get("message", "Image quality is insufficient for reliable field extraction."),
         }
-    return {"status": "READABLE", "message": quality_result.get("message", "Image quality is sufficient for field extraction.")}
+
+    blur_score = quality_result.get("blur_score")
+    if blur_score is not None:
+        blur_score = float(blur_score)
+        if blur_score < BLUR_THRESHOLD_POOR:
+            return {
+                "status": "NOT_VERIFIABLE",
+                "message": "Image is too blurry for reliable OCR.",
+            }
+
+    brightness = quality_result.get("brightness")
+    if brightness is not None:
+        brightness = float(brightness)
+        if brightness < BRIGHTNESS_LOW or brightness > BRIGHTNESS_HIGH:
+            return {
+                "status": "NOT_VERIFIABLE",
+                "message": "Image brightness is outside the usable range for reliable OCR.",
+            }
+
+    return {
+        "status": "READABLE",
+        "message": quality_result.get("message", "Image quality is sufficient for field extraction."),
+    }

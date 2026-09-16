@@ -29,8 +29,35 @@ def write_rules(path: Path, rules):
     path.write_text(json.dumps({"schema_version": "1.0.0", "rules": rules}), encoding="utf-8")
 
 
-def test_empty_rule_set_loads():
-    assert load_rules() == []
+def write_sources(path: Path):
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0.0",
+                "sources": [
+                    {
+                        "source_id": "example-source",
+                        "title": "Example official source",
+                        "publisher": "Example authority",
+                        "jurisdiction": "Example",
+                        "document_type": "Official document",
+                        "official_url": "https://example.com",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_empty_rule_set_loads(tmp_path):
+    path = tmp_path / "empty_rules.json"
+    write_rules(path, [])
+
+    sources = tmp_path / "sources.json"
+    write_sources(sources)
+
+    assert load_rules(path, as_of="2026-09-16", source_path=sources) == []
 
 
 def test_malformed_rule_data_is_rejected_safely(tmp_path):
@@ -55,16 +82,42 @@ def test_effective_date_filtering(tmp_path):
     unverified = dict(REQUIRED_RULE, rule_id="draft", verification_status="DRAFT")
     write_rules(path, [before, current, future, unverified])
 
-    result = load_rules(path, as_of="2026-09-16")
+    sources = tmp_path / "sources.json"
+    write_sources(sources)
+
+    result = load_rules(path, as_of="2026-09-16", source_path=sources)
     assert [rule["rule_id"] for rule in result] == ["current"]
 
 
 def test_source_references_are_preserved(tmp_path):
     path = tmp_path / "rules.json"
     write_rules(path, [REQUIRED_RULE])
-    loaded = load_rules(path, as_of="2026-09-16")
+
+    sources = tmp_path / "sources.json"
+    write_sources(sources)
+
+    loaded = load_rules(path, as_of="2026-09-16", source_path=sources)
     assert loaded[0]["source_id"] == "example-source"
     assert loaded[0]["source_document"] == "Example official document"
     assert loaded[0]["source_page"] == 10
     assert loaded[0]["source_section"] == "Section 1"
 
+
+
+def test_unknown_source_reference_is_rejected(tmp_path):
+    path = tmp_path / "rules.json"
+    write_rules(path, [REQUIRED_RULE])
+
+    sources = tmp_path / "sources.json"
+    sources.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0.0",
+                "sources": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuleDataError, match="unknown source_id"):
+        load_rules(path, as_of="2026-09-16", source_path=sources)

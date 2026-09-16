@@ -61,6 +61,8 @@ def test_quality_gate_marks_poor_images_not_verifiable():
     assert quality_gate({"quality": "GOOD", "width": 1000, "height": 800})["status"] == "READABLE"
     assert quality_gate({"quality": "POOR", "width": 1000, "height": 800})["status"] == "NOT_VERIFIABLE"
     assert quality_gate({"quality": "GOOD", "width": 100, "height": 80})["status"] == "NOT_VERIFIABLE"
+    assert quality_gate({"quality": "GOOD", "width": 1000, "height": 800, "brightness": 10})["status"] == "NOT_VERIFIABLE"
+    assert quality_gate({"quality": "GOOD", "width": 1000, "height": 800, "brightness": 240})["status"] == "NOT_VERIFIABLE"
 
 
 def test_parser_preserves_missing_fields_and_dimensions():

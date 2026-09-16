@@ -1,4 +1,53 @@
-{
+﻿{
   "schema_version": "1.0.0",
-  "sources": []
+  "sources": [
+    {
+      "source_id": "dca_pcr_compiled_rules_2011_amended",
+      "title": "Book on Legal Metrology (Packaged Commodities) Rules, 2011 with all amendments",
+      "publisher": "Department of Consumer Affairs, Ministry of Consumer Affairs, Food and Public Distribution, Government of India",
+      "jurisdiction": "India",
+      "document_type": "Consolidated official rules document",
+      "official_url": "https://consumeraffairs.gov.in/public/upload/admin/cmsfiles/whatsnews/Book_on_Legal_Metrology_Packaged_Commodities_Rules%2C2011_with_all_amendments_whatsnews.pdf",
+      "version": "Consolidated document with amendments",
+      "verification_status": "OFFICIAL_SOURCE",
+      "last_verified": "2026-09-16",
+      "notes": "Primary official source for the Legal Metrology (Packaged Commodities) Rules, 2011 and incorporated amendments."
+    },
+    {
+      "source_id": "dca_mandatory_declarations_2023",
+      "title": "Declaration of mandatory information on the outer retail package",
+      "publisher": "Legal Metrology Division, Department of Consumer Affairs, Government of India",
+      "jurisdiction": "India",
+      "document_type": "Official departmental communication",
+      "official_url": "https://consumeraffairs.gov.in/public/upload/admin/cmsfiles/whatsnews/Declaration_of_mandatory_information_on_the_outer_retail_package_-_reg._whatsnews.pdf",
+      "version": "18 January 2023",
+      "verification_status": "OFFICIAL_SOURCE",
+      "last_verified": "2026-09-16",
+      "notes": "Official communication summarizing mandatory declarations under Rule 6 for retail packages."
+    },
+    {
+      "source_id": "dca_pcr_amendment_2021",
+      "title": "Legal Metrology (Packaged Commodities) Amendment Rules, 2021",
+      "publisher": "Department of Consumer Affairs, Government of India",
+      "jurisdiction": "India",
+      "document_type": "Gazette notification",
+      "official_url": "https://consumeraffairs.gov.in/public/upload/admin/cmsfiles/whatsnews/The_Legal_Metrology_Packaged_Commodities_Amendment_Rule%2C_2021_whatsnews.pdf",
+      "version": "G.S.R. 779(E), 2 November 2021",
+      "verification_status": "OFFICIAL_SOURCE",
+      "last_verified": "2026-09-16",
+      "notes": "Official amendment introducing the detailed unit sale price declaration formats."
+    },
+    {
+      "source_id": "dca_pcr_amendment_2022_unit_sale_price",
+      "title": "Legal Metrology (Packaged Commodities) Amendment Rules, 2022",
+      "publisher": "Department of Consumer Affairs, Government of India",
+      "jurisdiction": "India",
+      "document_type": "Gazette notification",
+      "official_url": "https://consumeraffairs.gov.in/public/upload/files/GSR226_1732871458.pdf",
+      "version": "G.S.R. 226(E), 28 March 2022",
+      "verification_status": "OFFICIAL_SOURCE",
+      "last_verified": "2026-09-16",
+      "notes": "Official amendment modifying the commencement date and unit sale price wording."
+    }
+  ]
 }

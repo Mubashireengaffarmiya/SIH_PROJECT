@@ -13,6 +13,8 @@ from typing import Any, Dict, List, Optional, Union
 
 
 DEFAULT_RULES_PATH = Path(__file__).parent / "rules" / "verified_rules.json"
+DEFAULT_SOURCE_PATH = Path(__file__).parent / "source_registry.json"
+
 REQUIRED_RULE_FIELDS = (
     "rule_id",
     "rule_number",
@@ -38,7 +40,7 @@ class RuleDataError(ValueError):
 
 def _read_json(path: Path) -> Dict[str, Any]:
     try:
-        with path.open("r", encoding="utf-8") as handle:
+        with path.open("r", encoding="utf-8-sig") as handle:
             data = json.load(handle)
     except (OSError, json.JSONDecodeError) as exc:
         raise RuleDataError(f"Could not read regulation data from {path}: {exc}") from exc
@@ -58,7 +60,40 @@ def _parse_date(value: Any, field_name: str, rule_id: str) -> Optional[date]:
         raise RuleDataError(f"{field_name} for rule '{rule_id}' must use YYYY-MM-DD.") from exc
 
 
-def validate_rule(rule: Any) -> Dict[str, Any]:
+def _load_source_registry(path: Optional[Union[str, Path]] = None) -> Dict[str, Dict[str, Any]]:
+    """Load the official-source registry keyed by source_id."""
+    source_path = Path(path) if path else DEFAULT_SOURCE_PATH
+
+    document = _read_json(source_path)
+    sources = document.get("sources", [])
+
+    if not isinstance(sources, list):
+        raise RuleDataError("The sources field must be a JSON array.")
+
+    registry: Dict[str, Dict[str, Any]] = {}
+
+    for source in sources:
+        if not isinstance(source, dict):
+            raise RuleDataError("Each source entry must be a JSON object.")
+
+        source_id = source.get("source_id")
+
+        if not isinstance(source_id, str) or not source_id.strip():
+            raise RuleDataError("Every source entry must have a non-empty source_id.")
+
+        if source_id in registry:
+            raise RuleDataError(f"Duplicate source_id in source registry: {source_id}")
+
+        registry[source_id] = source
+
+    return registry
+
+
+def validate_rule(
+    rule: Any,
+    *,
+    source_registry: Optional[Dict[str, Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
     """Validate and return one rule without changing its source metadata."""
     if not isinstance(rule, dict):
         raise RuleDataError("Each rule must be a JSON object.")
@@ -76,6 +111,13 @@ def validate_rule(rule: Any) -> Dict[str, Any]:
         value = rule[field]
         if value is None or (isinstance(value, str) and not value.strip()):
             raise RuleDataError(f"{field} for rule '{rule_id}' must not be empty.")
+
+    if source_registry is not None:
+        source_id = rule["source_id"]
+        if source_id not in source_registry:
+            raise RuleDataError(
+                f"Rule '{rule_id}' references unknown source_id '{source_id}'."
+            )
 
     effective_from = _parse_date(rule["effective_from"], "effective_from", rule_id)
     effective_until = _parse_date(rule["effective_until"], "effective_until", rule_id)
@@ -95,13 +137,17 @@ def load_rules(
     path: Optional[Union[str, Path]] = None,
     *,
     as_of: Optional[Union[str, date]] = None,
+    source_path: Optional[Union[str, Path]] = None,
 ) -> List[Dict[str, Any]]:
     """Load verified, effective rules; return [] when no verified rules exist.
 
     Malformed JSON or malformed rule records raise RuleDataError so invalid
     legal-source data cannot be silently treated as an empty rule set.
     """
-    document = _read_json(Path(path) if path else DEFAULT_RULES_PATH)
+    rules_path = Path(path) if path else DEFAULT_RULES_PATH
+    source_registry = _load_source_registry(source_path)
+
+    document = _read_json(rules_path)
     rules = document.get("rules", [])
     if not isinstance(rules, list):
         raise RuleDataError("The rules field must be a JSON array.")
@@ -120,7 +166,7 @@ def load_rules(
 
     loaded: List[Dict[str, Any]] = []
     for candidate in rules:
-        rule = validate_rule(candidate)
+        rule = validate_rule(candidate, source_registry=source_registry)
         if rule["verification_status"] != "VERIFIED":
             continue
         if _is_effective(rule, effective_date):
