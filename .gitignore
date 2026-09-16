@@ -48,3 +48,6 @@ inference/
 .coverage
 htmlcov/
 .pytest_cache/
+
+# PaddleOCR test outputs
+data/paddle_test_output/
