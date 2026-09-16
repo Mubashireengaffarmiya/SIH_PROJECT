@@ -1,4 +1,4 @@
-﻿{
+{
   "schema_version": "1.0.0",
   "rules": [
     {
@@ -16,7 +16,8 @@
       "source_document": "Declaration of mandatory information on the outer retail package",
       "source_page": 1,
       "source_section": "Rule 6 mandatory declarations, item (i)",
-      "verification_status": "VERIFIED"
+      "verification_status": "VERIFIED",
+      "applicability_type": "ALWAYS"
     },
     {
       "rule_id": "pcr.rule6.common_generic_name.v1",
@@ -33,7 +34,8 @@
       "source_document": "Declaration of mandatory information on the outer retail package",
       "source_page": 1,
       "source_section": "Rule 6 mandatory declarations, item (iii)",
-      "verification_status": "VERIFIED"
+      "verification_status": "VERIFIED",
+      "applicability_type": "ALWAYS"
     },
     {
       "rule_id": "pcr.rule6.net_quantity.v1",
@@ -50,7 +52,8 @@
       "source_document": "Declaration of mandatory information on the outer retail package",
       "source_page": 1,
       "source_section": "Rule 6 mandatory declarations, item (iv)",
-      "verification_status": "VERIFIED"
+      "verification_status": "VERIFIED",
+      "applicability_type": "ALWAYS"
     },
     {
       "rule_id": "pcr.rule6.manufacture_pack_import_date.v1",
@@ -67,7 +70,8 @@
       "source_document": "Declaration of mandatory information on the outer retail package",
       "source_page": 1,
       "source_section": "Rule 6 mandatory declarations, item (v)",
-      "verification_status": "VERIFIED"
+      "verification_status": "VERIFIED",
+      "applicability_type": "ALWAYS"
     },
     {
       "rule_id": "pcr.rule6.mrp.v1",
@@ -84,7 +88,8 @@
       "source_document": "Declaration of mandatory information on the outer retail package",
       "source_page": 1,
       "source_section": "Rule 6 mandatory declarations, item (vii)",
-      "verification_status": "VERIFIED"
+      "verification_status": "VERIFIED",
+      "applicability_type": "ALWAYS"
     },
     {
       "rule_id": "pcr.rule6.mrp_format.v1",
@@ -101,7 +106,8 @@
       "source_document": "Declaration of mandatory information on the outer retail package",
       "source_page": 1,
       "source_section": "Rule 6 mandatory declarations, item (vii)",
-      "verification_status": "VERIFIED"
+      "verification_status": "VERIFIED",
+      "applicability_type": "ALWAYS"
     },
     {
       "rule_id": "pcr.rule6.consumer_care.v1",
@@ -118,7 +124,8 @@
       "source_document": "Declaration of mandatory information on the outer retail package",
       "source_page": 1,
       "source_section": "Rule 6 mandatory declarations, item (viii)",
-      "verification_status": "VERIFIED"
+      "verification_status": "VERIFIED",
+      "applicability_type": "ALWAYS"
     },
     {
       "rule_id": "pcr.rule6.unit_sale_price.v1",
@@ -135,7 +142,8 @@
       "source_document": "Legal Metrology (Packaged Commodities) Amendment Rules, 2022",
       "source_page": 2,
       "source_section": "Rule 6(11)",
-      "verification_status": "VERIFIED"
+      "verification_status": "VERIFIED",
+      "applicability_type": "CONDITIONAL"
     }
   ]
 }

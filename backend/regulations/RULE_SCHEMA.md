@@ -1,35 +1,64 @@
-# Verified Rule Schema
+﻿# SMART-LM Rule Schema
 
-This document defines the metadata required for a future rule to enter the government-source-backed rule set. An empty rule set is intentional until a human verifies an exact official source.
+This directory contains the government-source-based compliance rule
+configuration used by SMART-LM.
 
-Every verified rule must contain:
+## Rule record
 
-| Field                 | Meaning                                                                                           |
-| --------------------- | ------------------------------------------------------------------------------------------------- |
-| `rule_id`             | Stable unique identifier for the structured rule.                                                 |
-| `rule_number`         | Exact rule, section, clause, or paragraph reference as printed in the source.                     |
-| `requirement`         | A faithful, non-invented description of the requirement.                                          |
-| `scope`               | The regulated subject or commodity scope.                                                         |
-| `applicability`       | Conditions under which the rule applies.                                                          |
-| `validation_method`   | The deterministic validation operation used by the engine.                                        |
-| `severity`            | Review priority assigned by the verified rule owner.                                              |
-| `evidence_required`   | Evidence needed to evaluate the rule.                                                             |
-| `effective_from`      | ISO date on which this version becomes effective, or `null` when the source does not specify one. |
-| `effective_until`     | ISO date after which this version is no longer effective, or `null` when open-ended.              |
-| `source_id`           | Identifier present in `source_registry.json`.                                                     |
-| `source_document`     | Exact official document title or identifier.                                                      |
-| `source_page`         | Page number or locator in the source, when applicable.                                            |
-| `source_section`      | Exact section, schedule, clause, or heading locator.                                              |
-| `verification_status` | Must be `VERIFIED` before the rule can be loaded for evaluation.                                  |
+Each rule should contain the following fields:
 
-## Required Source Metadata
+| Field | Description |
+|---|---|
+| `rule_id` | Stable unique identifier for the rule version. |
+| `rule_number` | Legal rule / clause reference. |
+| `requirement` | Human-readable compliance requirement. |
+| `scope` | Package/product scope to which the rule applies. |
+| `applicability` | Conditions under which the rule applies. |
+| `applicability_type` | Machine-readable applicability mode: `ALWAYS` or `CONDITIONAL`. |
+| `validation_method` | Application validation method used by SMART-LM. |
+| `severity` | Application-defined review priority; it is not assumed to be a severity assigned by the law. |
+| `evidence_required` | Evidence required to support the compliance decision. |
+| `effective_from` | Date from which this rule version is effective. |
+| `effective_until` | Date until which this rule version is effective, or `null` if still active. |
+| `source_id` | Identifier linking the rule to `source_registry.json`. |
+| `source_document` | Official source document name. |
+| `source_page` | Page containing the relevant source material. |
+| `source_section` | Relevant rule / section / clause. |
+| `verification_status` | Internal verification status. `VERIFIED` means the rule has been checked against the recorded official source; it does not mean government certification of SMART-LM. |
 
-Each `source_id` must resolve to a source-registry entry containing the source title, publisher, jurisdiction, document type, official URL, version, verification dates, and notes. The loader preserves source references but does not establish legal authenticity or perform human verification.
+## Verification rules
 
-## Date and Status Rules
+- Only rules with `verification_status = VERIFIED` are loaded by the rule loader.
+- Rules are filtered according to `effective_from` and `effective_until`.
+- `source_id` must exist in `source_registry.json`.
+- The source registry records the official government source used to verify the rule.
+- `applicability_type = ALWAYS` means the rule can be evaluated without additional applicability context.
+- `applicability_type = CONDITIONAL` means SMART-LM must establish applicability from inspection context before evaluating the rule.
+- Missing information must not automatically be interpreted as proof that a conditional rule applies.
+- If applicability cannot be established safely, SMART-LM returns `NEEDS REVIEW`.
 
-- Dates use ISO `YYYY-MM-DD` format.
-- `effective_from` and `effective_until` are inclusive date boundaries.
-- `effective_until` must not precede `effective_from`.
-- Rules with `verification_status` other than `VERIFIED` are ignored by the foundation loader.
-- No rule in this repository is currently government-verified; `verified_rules.json` intentionally contains an empty array.
+## Important distinction
+
+SMART-LM uses government publications as its legal source material.
+
+The software's `VERIFIED` status means:
+
+> Human-verified against the recorded official source.
+
+It does **not** mean that the Government of India has certified, approved, or endorsed the SMART-LM software.
+
+## Rule-engine principle
+
+The rule engine separates:
+
+1. **Source-backed legal requirement**
+2. **Applicability determination**
+3. **Evidence extraction**
+4. **Validation**
+5. **Compliance result**
+
+The OCR/VLM layer extracts visible information.
+
+The deterministic rule engine evaluates that information against the configured requirement.
+
+When required information is unavailable or applicability cannot be established, the system should prefer `NEEDS REVIEW` or `NOT VERIFIABLE` rather than making an unsupported legal conclusion.
