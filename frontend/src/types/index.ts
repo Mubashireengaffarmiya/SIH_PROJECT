@@ -58,6 +58,10 @@ export interface VLMResult {
   fields: Record<string, VLMField>;
   source_image: string | null;
   error: string | null;
+  quality_status: string;
+  quality_message: string | null;
+  blocks: Record<string, unknown>[];
+  markdown: string | null;
 }
 
 export interface HybridField {
@@ -66,6 +70,8 @@ export interface HybridField {
   final_value: string | null;
   status: string;
   needs_review: boolean;
+  ocr_evidence: string | null;
+  vlm_evidence: string | null;
 }
 
 export type ComplianceStatus = 'COMPLIANT' | 'NON-COMPLIANT' | 'NEEDS REVIEW' | 'NOT APPLICABLE' | 'NOT VERIFIABLE';

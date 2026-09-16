@@ -11,6 +11,9 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
+from services.image_processing import quality_gate
+from services.text_normalization import currency_amount, normalize_currency_text
+
 logger = logging.getLogger(__name__)
 
 _PADDLEOCR_VL = None
@@ -66,7 +69,14 @@ def _clean(value: str) -> str:
 
 def _find_block(blocks: Iterable[Dict[str, Any]], pattern: str) -> Optional[Dict[str, Any]]:
     compiled = re.compile(pattern, re.IGNORECASE)
-    return next((block for block in blocks if compiled.search(str(block.get("block_content", "")))), None)
+    return next(
+        (
+            block for block in blocks
+            if compiled.search(str(block.get("block_content", "")))
+            or compiled.search(str(block.get("block_label", "")))
+        ),
+        None,
+    )
 
 
 def _match_value(block: Optional[Dict[str, Any]], pattern: str) -> Optional[str]:
@@ -80,23 +90,20 @@ def _parse_blocks(blocks: List[Dict[str, Any]], source_image: str) -> Dict[str, 
     fields = {name: _empty_field(source_image) for name in FIELD_NAMES}
     mrp_block = _find_block(blocks, r"\b(?:MRP|MAXIMUM\s+RETAIL\s+PRICE)\b")
     quantity_block = _find_block(blocks, r"\bNET\s*(?:QTY|QUANTITY|WEIGHT|WT|VOLUME|VOL)\b")
-    manufacturer_block = _find_block(blocks, r"\b(?:MANUFACTURED|PACKED|MFG\.?\s*(?:BY|&|&\s*MKTD)|MANUFACTURER|PACKER|IMPORTED)\b")
+    manufacturer_block = _find_block(blocks, r"\b(?:MANUFACTURED|PACKED|MFG\.?\s*(?:BY|&\s*MKTD\.?\s*BY|&)|MANUFACTURER|PACKER|IMPORTED)\b")
     date_block = _find_block(blocks, r"\b(?:MFD|MFG\.?\s*DATE|MANUFACTURED|PACKED\s+ON)\b")
     best_before_block = _find_block(blocks, r"\b(?:BEST\s+BEFORE|USE\s+BY|EXP(?:IRY|\.?\s*DATE))\b")
     care_block = _find_block(blocks, r"\b(?:CONSUMER|CUSTOMER|CARE|HELPLINE|FEEDBACK|COMPLAINT)\b")
     unit_price_block = _find_block(blocks, r"\bUNIT\s+SALE\s+PRICE\b|\bPRICE\s+PER\b")
     country_block = _find_block(blocks, r"\b(?:COUNTRY\s+OF\s+ORIGIN|MADE\s+IN|PRODUCT\s+OF)\b")
-    product_block = _find_block(blocks, r"\b(?:PROPRIETARY\s+FOOD|PRODUCT\s+NAME|PRODUCT)\b")
+    product_block = _find_block(blocks, r"\b(?:PROPRIETARY\s+FOOD|PRODUCT\s+NAME|PRODUCT|DOC_TITLE|PARAGRAPH_TITLE)\b")
     dimensions_block = _find_block(blocks, r"\b(?:DIMENSIONS?|SIZE)\b")
 
     fields["mrp"] = _field(
-        _match_value(mrp_block, r"(?:MRP|MAXIMUM\s+RETAIL\s+PRICE).*?(?:₹|RS\.?|INR)?\s*([0-9]+(?:\.[0-9]{1,2})?)"),
+        currency_amount(_match_value(mrp_block, r"(?:MRP|MAXIMUM\s+RETAIL\s+PRICE)(.*)") or ""),
         mrp_block,
         source_image,
     )
-    if fields["mrp"]["value"]:
-        fields["mrp"]["value"] = f"₹{fields['mrp']['value']}"
-
     fields["net_quantity"] = _field(
         _match_value(quantity_block, r"(?:NET\s*(?:QTY|QUANTITY|WEIGHT|WT|VOLUME|VOL)).*?([0-9]+(?:\.[0-9]+)?\s*(?:mg|g|gm|kg|ml|l|litre|liter|pieces?|pcs|units?))"),
         quantity_block,
@@ -133,8 +140,11 @@ def _parse_blocks(blocks: List[Dict[str, Any]], source_image: str) -> Dict[str, 
         dimensions_block,
         source_image,
     )
+    product_value = _match_value(product_block, r"(?:PROPRIETARY\s+FOOD|PRODUCT\s+NAME|PRODUCT)\s*:?\s*([^\n]+)")
+    if not product_value and product_block and str(product_block.get("block_label", "")).lower() in {"doc_title", "paragraph_title"}:
+        product_value = _clean(str(product_block.get("block_content", "")))
     fields["product_name"] = _field(
-        _match_value(product_block, r"(?:PROPRIETARY\s+FOOD|PRODUCT\s+NAME|PRODUCT)\s*:?\s*([^\n]+)"),
+        product_value,
         product_block,
         source_image,
     )
@@ -157,11 +167,15 @@ class PaddleOCRVLEngine:
 
     @staticmethod
     def availability() -> Dict[str, Any]:
+        configured = os.getenv("SMARTLM_PADDLE_PYTHON")
+        default = Path(__file__).resolve().parents[3] / "paddle_env" / "Scripts" / "python.exe"
+        worker_available = Path(configured).is_file() if configured else default.is_file()
         return {
-            "available": _PADDLEOCR_VL is not None,
-            "engine": "paddleocr-vl" if _PADDLEOCR_VL is not None else "none",
+            "available": _PADDLEOCR_VL is not None or worker_available,
+            "engine": "paddleocr-vl" if _PADDLEOCR_VL is not None else "paddleocr-vl-external" if worker_available else "none",
             "pipeline_version": os.getenv("SMARTLM_VLM_PIPELINE_VERSION", "v1.5"),
             "error": _IMPORT_ERROR,
+            "external_worker_available": worker_available,
         }
 
     def _get_pipeline(self):
@@ -179,9 +193,10 @@ class PaddleOCRVLEngine:
             )
         return self._pipeline
 
-    def run(self, image_path: str, output_dir: Optional[str] = None) -> Dict[str, Any]:
+    def run(self, image_path: str, output_dir: Optional[str] = None, quality_result: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         path = Path(image_path)
-        base = {"status": "failed", "engine": "paddleocr-vl", "pipeline_version": self.pipeline_version, "fields": {name: _empty_field(str(path)) for name in FIELD_NAMES}, "source_image": str(path), "error": None}
+        gate = quality_gate(quality_result) if quality_result is not None else {"status": "READABLE", "message": "Quality assessment not provided."}
+        base = {"status": "failed", "engine": "paddleocr-vl", "pipeline_version": self.pipeline_version, "fields": {name: _empty_field(str(path)) for name in FIELD_NAMES}, "source_image": str(path), "error": None, "quality_status": gate["status"], "quality_message": gate["message"], "blocks": [], "markdown": ""}
         if not path.is_file():
             base["error"] = f"Image not found: {path}"
             return base
@@ -199,6 +214,10 @@ class PaddleOCRVLEngine:
                 "blocks": blocks,
                 "error": None,
             })
+            if gate["status"] == "NOT_VERIFIABLE":
+                for field in base["fields"].values():
+                    if field["value"] is None:
+                        field["status"] = "NOT_VERIFIABLE"
             if output_dir:
                 output = Path(output_dir)
                 output.mkdir(parents=True, exist_ok=True)
@@ -228,7 +247,14 @@ class PaddleOCRVLEngine:
             base["error"] = completed.stderr.strip() or completed.stdout.strip() or "PaddleOCR-VL worker failed."
             return base
         try:
-            return json.loads(completed.stdout)
+            result = json.loads(completed.stdout)
+            result.setdefault("quality_status", base["quality_status"])
+            result.setdefault("quality_message", base["quality_message"])
+            if result.get("quality_status") == "NOT_VERIFIABLE":
+                for field in result.get("fields", {}).values():
+                    if field.get("value") is None:
+                        field["status"] = "NOT_VERIFIABLE"
+            return result
         except json.JSONDecodeError as exc:
             base["error"] = f"Invalid PaddleOCR-VL worker response: {exc}"
             return base

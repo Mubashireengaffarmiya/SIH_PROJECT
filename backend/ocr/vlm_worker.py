@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import contextlib
+import io
 import sys
 from pathlib import Path
 
@@ -17,24 +19,26 @@ def main() -> None:
     image_path = Path(sys.argv[1])
     pipeline_version = sys.argv[2] if len(sys.argv) > 2 else "v1.5"
     output_dir = Path(sys.argv[3]) if len(sys.argv) > 3 else None
-    engine = PaddleOCRVL(
-        pipeline_version=pipeline_version,
-        use_doc_orientation_classify=True,
-        use_doc_unwarping=True,
-        use_layout_detection=True,
-        use_chart_recognition=False,
-        use_seal_recognition=False,
-        use_ocr_for_image_block=True,
-    )
-    result = next(iter(engine.predict(str(image_path), use_doc_orientation_classify=True, use_doc_unwarping=True)))
+    with contextlib.redirect_stdout(sys.stderr):
+        engine = PaddleOCRVL(
+            pipeline_version=pipeline_version,
+            use_doc_orientation_classify=True,
+            use_doc_unwarping=True,
+            use_layout_detection=True,
+            use_chart_recognition=False,
+            use_seal_recognition=False,
+            use_ocr_for_image_block=True,
+        )
+        result = next(iter(engine.predict(str(image_path), use_doc_orientation_classify=True, use_doc_unwarping=True)))
     payload = result.json if isinstance(result.json, dict) else json.loads(result.json)
     data = payload.get("res", payload)
     blocks = data.get("parsing_res_list", [])
     if output_dir:
         output_dir.mkdir(parents=True, exist_ok=True)
-        result.save_to_json(str(output_dir))
-        result.save_to_img(str(output_dir))
-        result.save_to_markdown(str(output_dir))
+        with contextlib.redirect_stdout(sys.stderr):
+            result.save_to_json(str(output_dir))
+            result.save_to_img(str(output_dir))
+            result.save_to_markdown(str(output_dir))
     response = {
         "status": "success",
         "engine": "paddleocr-vl",

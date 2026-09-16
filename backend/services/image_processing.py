@@ -20,6 +20,7 @@ BLUR_THRESHOLD_ACCEPTABLE = 120.0  # Below this → acceptable
 BRIGHTNESS_LOW = 50.0             # Mean pixel value below this → too dark
 BRIGHTNESS_HIGH = 220.0           # Above this → overexposed
 MAX_DIMENSION = 2048              # Resize long edge to this
+MIN_READABLE_DIMENSION = 320
 
 
 def load_and_preprocess(image_path: str) -> Dict[str, Any]:
@@ -213,3 +214,16 @@ def _error_result(message: str) -> Dict[str, Any]:
         "height": 0,
         "_preprocessed_bgr": None,
     }
+
+
+def quality_gate(quality_result: Dict[str, Any]) -> Dict[str, str]:
+    """Describe whether missing fields can be treated as genuinely undetected."""
+    width = int(quality_result.get("width", 0) or 0)
+    height = int(quality_result.get("height", 0) or 0)
+    quality = quality_result.get("quality", "POOR")
+    if min(width, height) < MIN_READABLE_DIMENSION or quality == "POOR":
+        return {
+            "status": "NOT_VERIFIABLE",
+            "message": quality_result.get("message", "Image quality is insufficient for reliable field extraction."),
+        }
+    return {"status": "READABLE", "message": quality_result.get("message", "Image quality is sufficient for field extraction.")}

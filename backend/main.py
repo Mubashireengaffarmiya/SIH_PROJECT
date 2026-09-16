@@ -187,9 +187,13 @@ async def analyze_image(
             "fields": {},
             "source_image": image_path,
             "error": "VLM disabled by SMARTLM_ENABLE_VLM.",
+            "quality_status": "NOT_VERIFIABLE" if image_quality == "POOR" else "READABLE",
+            "quality_message": quality_result.get("message"),
+            "blocks": [],
+            "markdown": "",
         }
     else:
-        vlm_result = await asyncio.to_thread(_vlm_engine.run, image_path)
+        vlm_result = await asyncio.to_thread(_vlm_engine.run, image_path, None, quality_result)
 
     # --- Extraction ---
     logger.info("[%s] Extracting declarations...", inspection_id)
@@ -203,6 +207,9 @@ async def analyze_image(
     # --- Persist to database ---
     now = datetime.utcnow()
     product_name = extraction.get("product_name", {}).get("value")
+    hybrid_product = hybrid_extraction.get("product_name", {})
+    if not product_name and hybrid_product.get("status") == "VLM_ONLY":
+        product_name = hybrid_product.get("final_value")
 
     db_inspection = Inspection(
         inspection_id=inspection_id,
@@ -315,6 +322,10 @@ async def analyze_image(
             fields={key: VLMField(**value) for key, value in vlm_result.get("fields", {}).items()},
             source_image=vlm_result.get("source_image"),
             error=vlm_result.get("error"),
+            quality_status=vlm_result.get("quality_status", "READABLE"),
+            quality_message=vlm_result.get("quality_message"),
+            blocks=vlm_result.get("blocks", []),
+            markdown=vlm_result.get("markdown"),
         ),
         hybrid_extraction={key: HybridField(**value) for key, value in hybrid_extraction.items()},
         compliance=ComplianceResult(

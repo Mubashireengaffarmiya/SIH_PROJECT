@@ -81,6 +81,10 @@ class VLMResult(BaseModel):
     fields: Dict[str, VLMField] = {}
     source_image: Optional[str] = None
     error: Optional[str] = None
+    quality_status: str = "READABLE"
+    quality_message: Optional[str] = None
+    blocks: List[Dict[str, Any]] = []
+    markdown: Optional[str] = None
 
 
 class HybridField(BaseModel):
@@ -89,6 +93,8 @@ class HybridField(BaseModel):
     final_value: Optional[str] = None
     status: str
     needs_review: bool = False
+    ocr_evidence: Optional[str] = None
+    vlm_evidence: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
